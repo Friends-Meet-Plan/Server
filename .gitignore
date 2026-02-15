@@ -28,16 +28,14 @@ Cargo.lock
 *.log
 
 # === Docker ===
-*.dockerfile
+docker/.env       
 docker-compose.override.yml
 docker-compose.override.yaml
-docker-compose.*.yml
-docker-compose.*.yaml
-**/Dockerfile
-**/docker-compose*.yml
-**/docker-compose*.yaml
-docker/.env
-.env
+docker-compose.*.local.yml
+docker-compose.*.env
+
+**/volumes/
+**/db_data/
 
 # === Misc ===
 node_modules/   # if using any frontend in repo
