@@ -2,12 +2,9 @@
 
 ## User
 - id (uuid)
-- name (string)
 - username (string, unique)
 - avatar_url (string, nullable)
 - bio (string, nullable)
-- created_at
-- updated_at
 
 ## Friendship
 - id (uuid)
@@ -19,7 +16,7 @@
 Замечания:
 - направленная связь: инициатор = user_id, получатель = friend_id
 - дружба считается принятой, когда status = accepted
-- дружба уникальна на пару (user_id, friend_id)
+- дружба уникальна по паре (user_id, friend_id)
 
 ## AvailabilityDay
 - id (uuid)
@@ -56,7 +53,6 @@
 - event_id (uuid)
 - user_id (uuid)
 - status (enum: pending, accepted, declined)
-- responded_at (datetime, nullable)
 
 Замечания:
 - уникально на пару (event_id, user_id)
@@ -68,8 +64,7 @@
 - event_id (uuid)
 - user_id (uuid)
 - photo_url (string)
-- caption (string, nullable)
-- created_at
+- visited_at
 
 Замечания:
 - 1 фото на пользователя на событие
@@ -92,7 +87,7 @@
 - редактирует только владелец (обсуждаемо, для простоты можно убрать редакт)
 - друзья могут использовать при создании встречи
 
-## Notification через WebSocket (опционально для API)
+## Notification через WebSocket (опционально для API) если mvp успеем
 - id (uuid)
 - user_id (uuid)
 - type (enum: invite_new, invite_accepted, invite_declined, all_confirmed, event_tomorrow, event_add_photo, wish_visited)
