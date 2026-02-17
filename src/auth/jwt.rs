@@ -3,11 +3,9 @@ use serde::{Serialize, Deserialize};
 use chrono::{Utc, Duration};
 use std::env;
 
-/// JWT: HEADER.PAYLOAD.SIGNATURE
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Payload {
-    pub sub: String, // например user id
+    pub sub: String,
     pub exp: usize
 }
 
@@ -16,12 +14,10 @@ pub fn create_jwt(user_id: String) -> String {
         .checked_add_signed(Duration::hours(24))
         .unwrap()
         .timestamp() as usize;
-
     let payload = Payload {
         sub: user_id,
         exp: expiration
     };
-
     /*
     Header::default:
     {
@@ -30,12 +26,12 @@ pub fn create_jwt(user_id: String) -> String {
     }
     Enconding: создание ключа для подписи
     */
-    return encode(
+    encode(
         &Header::default(),
         &payload,
         &EncodingKey::from_secret(&jwt_secret())
     )
-    .unwrap();
+    .unwrap()
 }
 
 pub fn verify_jwt(token: &str) -> Option<Payload> {
