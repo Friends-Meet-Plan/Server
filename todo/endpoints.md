@@ -10,7 +10,7 @@
   - логин по username + password
   - body: `{ username, password }`
 - `POST /auth/logout`
-  - завершить сессию
+  - завершить сессию (клиент удалит токен)
 
 ## Users
 - `GET /users/me`

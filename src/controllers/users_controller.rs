@@ -4,14 +4,14 @@ use axum::{
     http::StatusCode,
     routing::{get, patch},
 };
-use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
+use crate::controllers::models::update_user_request_body::UpdateUserRequestBody;
+use crate::controllers::models::user_name_search_query::UserNameSearchQuery;
+use crate::controllers::models::user_response::UserResponse;
 use crate::entities::{User, UserActiveModel, UserColumn, user};
-use crate::controllers::models::{UpdateUserRequestBody, UserResponse, UserNameSearchQuery};
 
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()

@@ -12,6 +12,7 @@ mod db;
 mod entities;
 mod migration;
 
+use crate::controllers::auth_controller;
 use crate::migration::Migrator;
 use controllers::users_controller;
 
@@ -26,6 +27,7 @@ async fn main() {
         .expect("migration failed");
 
     let app_router = Router::new()
+        .merge(auth_controller::router())
         .merge(users_controller::router());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
