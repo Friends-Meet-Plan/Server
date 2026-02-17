@@ -25,7 +25,8 @@ async fn main() {
         .await
         .expect("migration failed");
 
-    let app_router = Router::new().merge(users_controller::router());
+    let app_router = Router::new()
+        .merge(users_controller::router());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("Starts on http://{}", addr);
