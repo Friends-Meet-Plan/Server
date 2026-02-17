@@ -1,12 +1,12 @@
-use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
-use serde::{Serialize, Deserialize};
-use chrono::{Utc, Duration};
+use chrono::{Duration, Utc};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use serde::{Deserialize, Serialize};
 use std::env;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Payload {
     pub sub: String,
-    pub exp: usize
+    pub exp: usize,
 }
 
 pub fn create_jwt(user_id: String) -> String {
@@ -16,7 +16,7 @@ pub fn create_jwt(user_id: String) -> String {
         .timestamp() as usize;
     let payload = Payload {
         sub: user_id,
-        exp: expiration
+        exp: expiration,
     };
     /*
     Header::default:
@@ -29,7 +29,7 @@ pub fn create_jwt(user_id: String) -> String {
     encode(
         &Header::default(),
         &payload,
-        &EncodingKey::from_secret(&jwt_secret())
+        &EncodingKey::from_secret(&jwt_secret()),
     )
     .unwrap()
 }
@@ -39,7 +39,7 @@ pub fn verify_jwt(token: &str) -> Option<Payload> {
     decode::<Payload>(
         token,
         &DecodingKey::from_secret(&jwt_secret()),
-        &Validation::default()
+        &Validation::default(),
     )
     .map(|data| data.claims)
     .ok()

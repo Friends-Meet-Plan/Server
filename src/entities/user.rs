@@ -10,6 +10,7 @@ pub struct Model {
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
     pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

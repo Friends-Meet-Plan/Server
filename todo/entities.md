@@ -43,7 +43,6 @@
 - status (enum: pending, confirmed, cancelled, completed)
 - wish_place_id (uuid, nullable)
 - created_at
-- updated_at
 
 Замечания:
 - участники события хранятся в EventParticipant (event_id, user_id)
@@ -59,6 +58,7 @@
 - event.status = confirmed только когда все участники accepted
 - при declined любого участника: event.status = cancelled (обсуждаемо)
 
+// TODO: подумать
 ## EventMemory
 - id (uuid)
 - event_id (uuid)

@@ -5,9 +5,9 @@
 ## Auth
 - `POST /auth/register`
   - создать аккаунт
-  - body: `{ name, username, avatar_url?, bio?, password }`
+  - body: `{ username, avatar_url?, bio?, password }`
 - `POST /auth/login`
-  - логин по username/password
+  - логин по username + password
   - body: `{ username, password }`
 - `POST /auth/logout`
   - завершить сессию
@@ -17,7 +17,7 @@
   - получить свой профиль
 - `PATCH /users/me`
   - обновить свой профиль
-  - body: `{ name?, avatar_url?, bio? }`
+  - body: `{ username?, avatar_url?, bio? }`
 - `GET /users/:id`
   - получить профиль пользователя по id
 - `GET /users/search?username=...`
