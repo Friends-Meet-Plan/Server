@@ -13,7 +13,7 @@ mod entities;
 mod migration;
 
 use crate::migration::Migrator;
-use controllers::users;
+use controllers::users_controller;
 
 #[tokio::main]
 async fn main() {
@@ -25,7 +25,7 @@ async fn main() {
         .await
         .expect("migration failed");
 
-    let app_router = Router::new().merge(users::router());
+    let app_router = Router::new().merge(users_controller::router());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("Starts on http://{}", addr);

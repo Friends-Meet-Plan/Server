@@ -10,27 +10,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
-use crate::entities::{User, user, UserActiveModel, UserColumn};
-
-#[derive(Serialize)]
-struct UserResponse {
-    id: Uuid,
-    username: String,
-    avatar_url: Option<String>,
-    bio: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct UpdateUserRequestBody {
-    username: Option<String>,
-    avatar_url: Option<String>,
-    bio: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct UserSearchQueryParameters {
-    username: Option<String>,
-}
+use crate::entities::{User, UserActiveModel, UserColumn, user};
+use crate::controllers::models::{UpdateUserRequestBody, UserResponse, UserNameSearchQuery};
 
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()
@@ -44,7 +25,7 @@ pub fn router() -> Router<DatabaseConnection> {
 */
 async fn get_me(
     auth_user: AuthUser,
-    State(db_connection): State<DatabaseConnection>
+    State(db_connection): State<DatabaseConnection>,
 ) -> Result<Json<UserResponse>, (StatusCode, String)> {
     let user_id = Uuid::parse_str(&auth_user.user_id)
         .map_err(|err| (StatusCode::UNAUTHORIZED, "invalid user id".to_string()))?;
@@ -138,7 +119,7 @@ async fn get_user_by_id(
 */
 async fn search_users(
     State(db): State<DatabaseConnection>,
-    Query(query): Query<UserSearchQueryParameters>,
+    Query(query): Query<UserNameSearchQuery>,
 ) -> Result<Json<Vec<UserResponse>>, (StatusCode, String)> {
     let username = query.username.unwrap_or_default();
     if username.trim().is_empty() {
