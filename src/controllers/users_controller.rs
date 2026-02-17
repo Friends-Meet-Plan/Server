@@ -20,10 +20,20 @@ pub fn router() -> Router<DatabaseConnection> {
         .route("/users/search", get(search_users))
 }
 
-/*
-    Достаем auth: AuthUser из JWT
-*/
-async fn get_me(
+#[utoipa::path(
+    get,
+    path = "/users/me",
+    responses(
+        (status = 200, description = "Current user profile", body = UserResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "User not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "user_routes"
+)]
+pub async fn get_me(
     auth_user: AuthUser,
     State(db_connection): State<DatabaseConnection>,
 ) -> Result<Json<UserResponse>, (StatusCode, String)> {
@@ -47,11 +57,21 @@ async fn get_me(
     }))
 }
 
-/*
-    Достаем auth: AuthUser из JWT
-    Json(payload): тело запроса
-*/
-async fn update_me(
+#[utoipa::path(
+    patch,
+    path = "/users/me",
+    request_body = UpdateUserRequestBody,
+    responses(
+        (status = 200, description = "Updated current user profile", body = UserResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "User not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Users"
+)]
+pub async fn update_me(
     auth: AuthUser,
     State(db): State<DatabaseConnection>,
     Json(payload): Json<UpdateUserRequestBody>,
@@ -93,7 +113,19 @@ async fn update_me(
     }))
 }
 
-async fn get_user_by_id(
+#[utoipa::path(
+    get,
+    path = "/users/{id}",
+    params(
+        ("id" = Uuid, Path, description = "User id")
+    ),
+    responses(
+        (status = 200, description = "User profile by id", body = UserResponse),
+        (status = 404, description = "User not found")
+    ),
+    tag = "Users"
+)]
+pub async fn get_user_by_id(
     State(db): State<DatabaseConnection>,
     axum::extract::Path(id): axum::extract::Path<Uuid>,
 ) -> Result<Json<UserResponse>, (StatusCode, String)> {
@@ -114,10 +146,17 @@ async fn get_user_by_id(
     }))
 }
 
-/*
-    Query(query): Query<UserSearchQueryParameters> - query параметры
-*/
-async fn search_users(
+#[utoipa::path(
+    get,
+    path = "/users/search",
+    params(UserNameSearchQuery),
+    responses(
+        (status = 200, description = "Users found by username prefix", body = [UserResponse]),
+        (status = 400, description = "Query is invalid")
+    ),
+    tag = "Users"
+)]
+pub async fn search_users(
     State(db): State<DatabaseConnection>,
     Query(query): Query<UserNameSearchQuery>,
 ) -> Result<Json<Vec<UserResponse>>, (StatusCode, String)> {

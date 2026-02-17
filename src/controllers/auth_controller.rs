@@ -3,16 +3,13 @@ use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
-use serde::Serialize;
 
 use argon2::Argon2;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 
 use crate::auth::jwt::create_jwt;
-use crate::controllers::models::auth_request_body::AuthRequestBody;
-use crate::controllers::models::login_request_body::LoginRequestBody;
-use crate::controllers::models::login_response::LoginResponse;
+use crate::controllers::models::{AuthRequestBody, LoginRequestBody, LoginResponse};
 use crate::controllers::models::user_response::UserResponse;
 use crate::entities::{User, UserActiveModel, user};
 
@@ -22,7 +19,15 @@ pub fn router() -> Router<DatabaseConnection> {
         .route("/auth/login", post(login))
 }
 
-async fn register(
+#[utoipa::path(
+    post,
+    path = "/auth/register",
+    request_body = AuthRequestBody,
+    responses(
+        (status = 201, description = "User created")
+    )
+)]
+pub async fn register(
     State(db_connection): State<DatabaseConnection>,
     Json(body): Json<AuthRequestBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
@@ -48,7 +53,7 @@ async fn register(
         password_hash: Set(password_hash),
         ..Default::default()
     };
-    let _model = active
+    let _ = active
         .insert(&db_connection)
         .await
         .map_err(|e| {
@@ -59,11 +64,19 @@ async fn register(
                 (StatusCode::INTERNAL_SERVER_ERROR, msg)
             }
         })?;
-
     Ok(StatusCode::CREATED)
 }
 
-async fn login(
+#[utoipa::path(
+    post,
+    path = "/auth/login",
+    request_body = LoginRequestBody,
+    responses(
+        (status = 200, description = "Login successful", body = LoginResponse),
+        (status = 401, description = "Invalid credentials")
+    )
+)]
+pub async fn login(
     State(db_connection): State<DatabaseConnection>,
     Json(body): Json<LoginRequestBody>,
 ) -> Result<Json<LoginResponse>, (StatusCode, String)> {
@@ -84,13 +97,12 @@ async fn login(
         return Err((StatusCode::UNAUTHORIZED, "invalid credentials".to_string()));
     };
 
-    let parsed_hash = PasswordHash::new(&model.password_hash)
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "invalid password hash".to_string(),
-            )
-        })?;
+    let parsed_hash = PasswordHash::new(&model.password_hash).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "invalid password hash".to_string(),
+        )
+    })?;
 
     Argon2::default()
         .verify_password(body.password.as_bytes(), &parsed_hash)

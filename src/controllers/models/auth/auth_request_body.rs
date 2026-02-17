@@ -1,6 +1,7 @@
 use serde::Deserialize;
+use utoipa::ToSchema;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct AuthRequestBody {
     pub username: String,
     pub avatar_url: Option<String>,
