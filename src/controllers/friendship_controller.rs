@@ -1,12 +1,11 @@
-use std::collections::HashMap;
 use axum::{Json, Router};
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
-use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use axum::routing::{delete, get, post};
+use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromJsonQueryResult, IntoActiveModel, QueryFilter, QuerySelect, Set};
 use uuid::Uuid;
 use crate::auth::middleware::AuthUser;
-use crate::controllers::models::{FriendIdBody, UserDTO};
+use crate::controllers::models::{FriendIdBody, FriendIdQuery, UserDTO};
 use crate::entities::{friendship, user, Friendship, User, UserColumn};
 use crate::entities::friendship::FriendshipStatus;
 
@@ -19,6 +18,9 @@ pub fn router() -> Router<DatabaseConnection> {
         .route("/friends/request", post(friend_request))
         .route("/friends/incoming", get(get_incoming))
         .route("/friends/outgoing", get(get_outgoing))
+        .route("/friends/{id}/accept", post(accept_friend_request))
+        .route("/friends/{id}/remove", delete(remove_friend))
+        .route("/friends/{id}/reject", post(reject_friend_request))
 }
 
 async fn get_friends(
@@ -148,18 +150,103 @@ async fn friend_request(
     Ok(StatusCode::CREATED)
 }
 
-/*
-## Friendships
+async fn remove_friend(
+    auth: AuthUser,
+    State(db_connection): State<DatabaseConnection>,
+    Path(friend_id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let me = parse_auth_user_id(auth)?;
+    if me == friend_id {
+        return Err((StatusCode::BAD_REQUEST, "cannot remove yourself".to_string()))
+    }
+    let result = Friendship::delete_many()
+        .filter(FriendshipColumn::Status.eq(FriendshipStatus::Accepted))
+        .filter(
+            Condition::any()
+                .add(
+                    Condition::all()
+                        .add(FriendshipColumn::UserId.eq(me))
+                        .add(FriendshipColumn::FriendId.eq(friend_id)),
+                )
+                .add(
+                    Condition::all()
+                        .add(FriendshipColumn::UserId.eq(friend_id))
+                        .add(FriendshipColumn::FriendId.eq(me)),
+                ),
+        )
+        .exec(&db_connection)
+        .await
+        .map_err(internal_error)?;
+    if result.rows_affected == 0 {
+        return Err((StatusCode::NOT_FOUND, "friendship not found".to_string()));
+    };
 
-- `POST /friends/requests/:id/accept`
-  - принять входящий запрос (status=accepted)
-- `POST /friends/requests/:id/decline`
-  - отклонить входящий запрос (status=declined или удалить запись)
-- `DELETE /friends/:id`
-  - удалить из друзей (разорвать accepted связь)
- */
+    Ok(StatusCode::NO_CONTENT)
+}
 
+async fn accept_friend_request(
+    auth: AuthUser,
+    State(db_connection): State<DatabaseConnection>,
+    Path(sender_user_id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let me = parse_auth_user_id(auth)?;
 
+    if sender_user_id == me {
+        return Err((StatusCode::BAD_REQUEST, "cannot accept yourself".to_string()));
+    }
+
+    let row = Friendship::find()
+        .filter(FriendshipColumn::UserId.eq(sender_user_id))
+        .filter(FriendshipColumn::FriendId.eq(me))
+        .filter(FriendshipColumn::Status.eq(FriendshipStatus::Pending))
+        .one(&db_connection)
+        .await
+        .map_err(internal_error)?;
+
+    let Some(row) = row else {
+        return Err((StatusCode::NOT_FOUND, "request not found".to_string()));
+    };
+
+    let mut active = row.into_active_model();
+    active.status = Set(FriendshipStatus::Accepted);
+
+    active
+        .update(&db_connection)
+        .await
+        .map_err(internal_error)?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn reject_friend_request(
+    auth: AuthUser,
+    State(db_connection): State<DatabaseConnection>,
+    Path(sender_user_id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let me = parse_auth_user_id(auth)?;
+    if sender_user_id == me {
+        return Err((StatusCode::BAD_REQUEST, "cannot reject yourself".to_string()));
+    }
+
+    let row = Friendship::find()
+        .filter(FriendshipColumn::UserId.eq(sender_user_id))
+        .filter(FriendshipColumn::FriendId.eq(me))
+        .filter(FriendshipColumn::Status.eq(FriendshipStatus::Pending))
+        .one(&db_connection)
+        .await
+        .map_err(internal_error)?;
+
+    let Some(row) = row else {
+        return Err((StatusCode::NOT_FOUND, "request not found".to_string()));
+    };
+
+    row.into_active_model()
+        .delete(&db_connection)
+        .await
+        .map_err(internal_error)?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
 
 // MARK: Helper methods
 fn parse_auth_user_id(auth: AuthUser) -> Result<Uuid, (StatusCode, String)> {

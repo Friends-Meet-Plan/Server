@@ -33,7 +33,7 @@ where
         // Err((StatusCode::UNAUTHORIZED, "Missing or invalid Bearer token"))
         // TODO: включить в release
         return Ok(AuthUser {
-            user_id: "fd94d39f-c469-4f52-8d6d-34f6b7c0546c".to_string(),
+            user_id: "2757cf6a-5ccb-40f1-b111-138998af3660".to_string(),
         });
     }
 }
