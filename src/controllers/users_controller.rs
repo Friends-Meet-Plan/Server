@@ -11,7 +11,7 @@ use crate::auth::middleware::AuthUser;
 use crate::controllers::models::update_user_request_body::UpdateUserRequestBody;
 use crate::controllers::models::user_name_search_query::UserNameSearchQuery;
 use crate::controllers::models::user_response::UserResponse;
-use crate::entities::{User, UserActiveModel, UserColumn, user};
+use crate::entities::{User, UserActiveModel, UserColumn};
 
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()

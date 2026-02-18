@@ -3,5 +3,5 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct FriendIdBody {
-    pub id: Uuid,
+    pub friend_id: Uuid,
 }

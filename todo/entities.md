@@ -11,7 +11,6 @@
 - user_id (uuid)
 - friend_id (uuid)
 - status (enum: pending, accepted)
-- created_at
 
 Замечания:
 - направленная связь: инициатор = user_id, получатель = friend_id
