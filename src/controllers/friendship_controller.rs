@@ -1,11 +1,11 @@
 use axum::{Json, Router};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post};
-use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromJsonQueryResult, IntoActiveModel, QueryFilter, QuerySelect, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, Set};
 use uuid::Uuid;
 use crate::auth::middleware::AuthUser;
-use crate::controllers::models::{FriendIdBody, FriendIdQuery, UserDTO};
+use crate::controllers::models::{FriendIdBody, UserDTO};
 use crate::entities::{friendship, user, Friendship, User, UserColumn};
 use crate::entities::friendship::FriendshipStatus;
 
@@ -23,7 +23,19 @@ pub fn router() -> Router<DatabaseConnection> {
         .route("/friends/{id}/reject", post(reject_friend_request))
 }
 
-async fn get_friends(
+#[utoipa::path(
+    get,
+    path = "/friends",
+    responses(
+        (status = 200, description = "Current user's accepted friends", body = [UserDTO]),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Friends"
+)]
+pub async fn get_friends(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
 ) -> Result<Json<Vec<UserDTO>>, (StatusCode, String)> {
@@ -62,7 +74,19 @@ async fn get_friends(
     ))
 }
 
-async fn get_incoming(
+#[utoipa::path(
+    get,
+    path = "/friends/incoming",
+    responses(
+        (status = 200, description = "Incoming friend requests", body = [UserDTO]),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Friends"
+)]
+pub async fn get_incoming(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
 ) -> Result<Json<Vec<UserDTO>>, (StatusCode, String)> {
@@ -95,7 +119,19 @@ async fn get_incoming(
     ))
 }
 
-async fn get_outgoing(
+#[utoipa::path(
+    get,
+    path = "/friends/outgoing",
+    responses(
+        (status = 200, description = "Outgoing friend requests", body = [UserDTO]),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Friends"
+)]
+pub async fn get_outgoing(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
 ) -> Result<Json<Vec<UserDTO>>, (StatusCode, String)> {
@@ -128,7 +164,21 @@ async fn get_outgoing(
     ))
 }
 
-async fn friend_request(
+#[utoipa::path(
+    post,
+    path = "/friends/request",
+    request_body = FriendIdBody,
+    responses(
+        (status = 201, description = "Friend request created"),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Friends"
+)]
+pub async fn friend_request(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
     Json(body): Json<FriendIdBody>,
@@ -150,7 +200,24 @@ async fn friend_request(
     Ok(StatusCode::CREATED)
 }
 
-async fn remove_friend(
+#[utoipa::path(
+    delete,
+    path = "/friends/{id}/remove",
+    params(
+        ("id" = Uuid, Path, description = "Friend user id")
+    ),
+    responses(
+        (status = 204, description = "Friend removed"),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Friendship not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Friends"
+)]
+pub async fn remove_friend(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
     Path(friend_id): Path<Uuid>,
@@ -184,7 +251,24 @@ async fn remove_friend(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn accept_friend_request(
+#[utoipa::path(
+    post,
+    path = "/friends/{id}/accept",
+    params(
+        ("id" = Uuid, Path, description = "Sender user id")
+    ),
+    responses(
+        (status = 204, description = "Friend request accepted"),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Request not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Friends"
+)]
+pub async fn accept_friend_request(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
     Path(sender_user_id): Path<Uuid>,
@@ -218,7 +302,24 @@ async fn accept_friend_request(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn reject_friend_request(
+#[utoipa::path(
+    post,
+    path = "/friends/{id}/reject",
+    params(
+        ("id" = Uuid, Path, description = "Sender user id")
+    ),
+    responses(
+        (status = 204, description = "Friend request rejected"),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Request not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Friends"
+)]
+pub async fn reject_friend_request(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
     Path(sender_user_id): Path<Uuid>,
