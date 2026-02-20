@@ -17,19 +17,30 @@
 - дружба считается принятой, когда status = accepted
 - дружба уникальна по паре (user_id, friend_id)
 
-## AvailabilityDay
-- id (uuid)
-- user_id (uuid)
-- date (date)
-- status (enum: invited, busy, past) если free то день не занят
-- event_id (uuid, nullable)
-- updated_at
+## Busyday
 
-Замечания:
-- один день на пользователя
-- status=invited при наличии входящего/исходящего приглашения
-- status=busy при подтвержденной встрече
-- status=past если date < today и есть event_id
+- id uuid pk
+- user_id uuid not null
+- date date not null
+- event_id uuid null
+
+unique(user_id, date)
+
+## invitation
+- id (uuid)
+- from_user_id
+- to_user_id
+- status (pending, accepted, declined)
+- selected_date (nullable, какая дата принята)
+- created_at
+ПРОВЕРКА НА friends
+
+## invitation_dates (какие даты предложили)
+- id
+- invitation_id
+- date
+
+UNIQUE(invitation_id, date)
 
 ## Event
 - id (uuid)
@@ -57,11 +68,11 @@
 - event.status = confirmed только когда все участники accepted
 - при declined любого участника: event.status = cancelled (обсуждаемо)
 
-// TODO: подумать
-## EventMemory
+## EventMemory (для выполненых ивентов)
 - id (uuid)
 - event_id (uuid)
 - user_id (uuid)
+- надо еще id всех участников
 - photo_url (string)
 - visited_at
 

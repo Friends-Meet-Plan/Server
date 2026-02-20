@@ -9,8 +9,8 @@ use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 
 use crate::auth::jwt::create_jwt;
-use crate::controllers::models::{AuthRequestBody, LoginRequestBody, LoginResponse};
 use crate::controllers::models::user_response::UserResponse;
+use crate::controllers::models::{AuthRequestBody, LoginRequestBody, LoginResponse};
 use crate::entities::{User, UserActiveModel, user};
 
 pub fn router() -> Router<DatabaseConnection> {
@@ -53,17 +53,14 @@ pub async fn register(
         password_hash: Set(password_hash),
         ..Default::default()
     };
-    let _ = active
-        .insert(&db_connection)
-        .await
-        .map_err(|e| {
-            let msg = e.to_string();
-            if msg.contains("duplicate key") || msg.contains("unique") {
-                (StatusCode::CONFLICT, "username already exists".to_string())
-            } else {
-                (StatusCode::INTERNAL_SERVER_ERROR, msg)
-            }
-        })?;
+    let _ = active.insert(&db_connection).await.map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("duplicate key") || msg.contains("unique") {
+            (StatusCode::CONFLICT, "username already exists".to_string())
+        } else {
+            (StatusCode::INTERNAL_SERVER_ERROR, msg)
+        }
+    })?;
     Ok(StatusCode::CREATED)
 }
 

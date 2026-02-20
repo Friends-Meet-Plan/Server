@@ -40,12 +40,46 @@
 - `DELETE /friends/:id`
   - удалить из друзей (разорвать accepted связь)
 
-## Availability
-- `GET /availability?user_id=...&from=YYYY-MM-DD&to=YYYY-MM-DD`
-  - получить статусы дат пользователя в диапазоне
-- `PUT /availability/:date`
-  - обновить статус даты (если разрешено продуктом)
-  - body: `{ status }`
+Invitations
+
+POST /invitations
+Создать приглашение с набором дат.
+Body: { "to_user_id": "uuid", "dates": ["2026-02-24","2026-02-26"] }
+Проверки: users друзья (accepted), даты уникальны, нет прошлого (если так решил), нет self-invite.
+Ответ: invitation + invitation_dates.
+
+GET /invitations/incoming?status=pending
+Входящие приглашения текущего пользователя.
+
+GET /invitations/outgoing?status=pending
+Исходящие приглашения текущего пользователя.
+
+GET /invitations/{id}/ 
+Детали приглашения + предложенные даты.
+
+POST /invitations/{id}/accept
+Принять приглашение и выбрать одну дату.
+Body: { "selected_date": "2026-02-26" }
+Проверки: дата есть в invitation_dates, статус сейчас pending, пользователь = to_user_id.
+Эффект: status=accepted, selected_date заполнен, создается event (если так задумано), пишутся busyday.
+
+POST /invitations/{id}/decline
+Отклонить приглашение.
+Эффект: status=declined.
+POST /invitations/{id}/cancel (опционально)
+Отмена отправителем, пока pending.
+Invitation Dates
+
+GET /users/{user_id}/calendar?from=2026-01-01&to=2026-04-30
+Отдает дни для сетки (busy + можно сразу derived free на клиенте).
+Лучше отдавать:
+busy_days (даты + event_id),
+pending_invites (даты pending invitation),
+past_events (для отдельного цвета в прошлом).
+
+GET /users/me/busydays?from=...&to=...
+Мои занятые дни.
+
 
 ## Events
 - `POST /events`
@@ -100,3 +134,6 @@
   - отметить уведомление прочитанным
 - `POST /notifications/read-all`
   - отметить все уведомления прочитанными
+
+ПОСЛЕ MVP
+блокировать себе в профиле дни

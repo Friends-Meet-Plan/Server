@@ -1,13 +1,16 @@
-use axum::{Json, Router};
+use crate::auth::middleware::AuthUser;
+use crate::controllers::models::{FriendIdBody, UserDTO};
+use crate::entities::friendship::FriendshipStatus;
+use crate::entities::{Friendship, User, UserColumn, friendship, user};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post};
-use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, Set};
+use axum::{Json, Router};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, IntoActiveModel,
+    QueryFilter, Set,
+};
 use uuid::Uuid;
-use crate::auth::middleware::AuthUser;
-use crate::controllers::models::{FriendIdBody, UserDTO};
-use crate::entities::{friendship, user, Friendship, User, UserColumn};
-use crate::entities::friendship::FriendshipStatus;
 
 pub use friendship::ActiveModel as FriendshipActive;
 pub use friendship::Column as FriendshipColumn;
@@ -45,7 +48,7 @@ pub async fn get_friends(
         .filter(
             Condition::any()
                 .add(FriendshipColumn::UserId.eq(me))
-                .add(FriendshipColumn::FriendId.eq(me))
+                .add(FriendshipColumn::FriendId.eq(me)),
         )
         .all(&db_connection)
         .await
@@ -53,7 +56,13 @@ pub async fn get_friends(
 
     let ids: Vec<Uuid> = rows
         .into_iter()
-        .map(|row| { if row.friend_id == me { row.user_id } else { row.friend_id } })
+        .map(|row| {
+            if row.friend_id == me {
+                row.user_id
+            } else {
+                row.friend_id
+            }
+        })
         .collect();
 
     if ids.is_empty() {
@@ -67,10 +76,7 @@ pub async fn get_friends(
         .map_err(internal_error)?;
 
     Ok(Json(
-        users
-            .into_iter()
-            .map(|model| to_user_dto(&model))
-            .collect()
+        users.into_iter().map(|model| to_user_dto(&model)).collect(),
     ))
 }
 
@@ -99,11 +105,10 @@ pub async fn get_incoming(
         .await
         .map_err(internal_error)?;
 
-    let ids: Vec<Uuid> = rows
-        .into_iter()
-        .map(|row| row.user_id)
-        .collect();
-    if ids.is_empty() { return Ok(Json(vec![])); }
+    let ids: Vec<Uuid> = rows.into_iter().map(|row| row.user_id).collect();
+    if ids.is_empty() {
+        return Ok(Json(vec![]));
+    }
 
     let users = User::find()
         .filter(UserColumn::Id.is_in(ids))
@@ -112,10 +117,7 @@ pub async fn get_incoming(
         .map_err(internal_error)?;
 
     Ok(Json(
-        users
-            .into_iter()
-            .map(|model| to_user_dto(&model))
-            .collect()
+        users.into_iter().map(|model| to_user_dto(&model)).collect(),
     ))
 }
 
@@ -144,11 +146,10 @@ pub async fn get_outgoing(
         .await
         .map_err(internal_error)?;
 
-    let ids: Vec<Uuid> = rows
-        .into_iter()
-        .map(|row| row.friend_id)
-        .collect();
-    if ids.is_empty() { return Ok(Json(vec![])); }
+    let ids: Vec<Uuid> = rows.into_iter().map(|row| row.friend_id).collect();
+    if ids.is_empty() {
+        return Ok(Json(vec![]));
+    }
 
     let users = User::find()
         .filter(UserColumn::Id.is_in(ids))
@@ -157,10 +158,7 @@ pub async fn get_outgoing(
         .map_err(internal_error)?;
 
     Ok(Json(
-        users
-            .into_iter()
-            .map(|model| to_user_dto(&model))
-            .collect()
+        users.into_iter().map(|model| to_user_dto(&model)).collect(),
     ))
 }
 
@@ -182,9 +180,11 @@ pub async fn friend_request(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
     Json(body): Json<FriendIdBody>,
-) -> Result<StatusCode, (StatusCode, String) > {
+) -> Result<StatusCode, (StatusCode, String)> {
     let me = parse_auth_user_id(auth)?;
-    if body.friend_id == me { return Err((StatusCode::BAD_REQUEST, "cannot add yourself".to_string())); }
+    if body.friend_id == me {
+        return Err((StatusCode::BAD_REQUEST, "cannot add yourself".to_string()));
+    }
 
     let frindship_active = FriendshipActive {
         user_id: Set(me),
@@ -224,7 +224,10 @@ pub async fn remove_friend(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let me = parse_auth_user_id(auth)?;
     if me == friend_id {
-        return Err((StatusCode::BAD_REQUEST, "cannot remove yourself".to_string()))
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "cannot remove yourself".to_string(),
+        ));
     }
     let result = Friendship::delete_many()
         .filter(FriendshipColumn::Status.eq(FriendshipStatus::Accepted))
@@ -276,7 +279,10 @@ pub async fn accept_friend_request(
     let me = parse_auth_user_id(auth)?;
 
     if sender_user_id == me {
-        return Err((StatusCode::BAD_REQUEST, "cannot accept yourself".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "cannot accept yourself".to_string(),
+        ));
     }
 
     let row = Friendship::find()
@@ -326,7 +332,10 @@ pub async fn reject_friend_request(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let me = parse_auth_user_id(auth)?;
     if sender_user_id == me {
-        return Err((StatusCode::BAD_REQUEST, "cannot reject yourself".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "cannot reject yourself".to_string(),
+        ));
     }
 
     let row = Friendship::find()
