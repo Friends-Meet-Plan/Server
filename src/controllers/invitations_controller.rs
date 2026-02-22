@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use axum::{
     Json, Router,
@@ -17,7 +17,7 @@ use crate::auth::middleware::AuthUser;
 use crate::controllers::models::{
     AcceptInvitationRequest, BusydayResponse, CalendarQuery, CalendarResponse,
     CreateInvitationRequest, CreatedInvitationResponse, InvitationDateResponse,
-    InvitationResponse, PendingInviteResponse,
+    InvitationResponse,
 };
 use crate::entities::friendship::{self, FriendshipStatus};
 use crate::entities::invitation::InvitationStatus;
@@ -35,8 +35,8 @@ pub fn router() -> Router<DatabaseConnection> {
         .route("/invitations/{id}/accept", post(accept_invitation))
         .route("/invitations/{id}/decline", post(decline_invitation))
         .route("/invitations/{id}/cancel", post(cancel_invitation))
+        .route("/users/me/calendar", get(get_my_calendar))
         .route("/users/{user_id}/calendar", get(get_user_calendar))
-        .route("/users/me/busydays", get(get_my_busydays))
 }
 
 #[utoipa::path(
@@ -397,12 +397,37 @@ pub async fn cancel_invitation(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// TODO: прочекать отсюда
+#[utoipa::path(
+    get,
+    path = "/users/me/calendar",
+    summary = "Мой календарь",
+    description = "Возвращает данные календаря текущего пользователя за диапазон `from..to`: занятые дни (`busy_days`) и прошедшие занятые дни (`past_events`).",
+    params(CalendarQuery),
+    responses(
+        (status = 200, description = "Calendar data", body = CalendarResponse),
+        (status = 400, description = "Invalid date range"),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Calendar"
+)]
+pub async fn get_my_calendar(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Query(query): Query<CalendarQuery>,
+) -> Result<Json<CalendarResponse>, (StatusCode, String)> {
+    let me = parse_auth_user_id(auth)?;
+    let response = build_calendar_response(&db, me, &query).await?;
+    Ok(Json(response))
+}
+
 #[utoipa::path(
     get,
     path = "/users/{user_id}/calendar",
     summary = "Календарь пользователя",
-    description = "Возвращает данные календаря за диапазон `from..to`: занятые дни (`busy_days`), даты по приглашениям в статусе `pending` (`pending_invites`) и прошедшие занятые дни (`past_events`). Доступ: сам пользователь или его принятый друг.",
+    description = "Возвращает данные календаря за диапазон `from..to`: занятые дни (`busy_days`) и прошедшие занятые дни (`past_events`). Доступ: сам пользователь или его принятый друг.",
     params(
         ("user_id" = Uuid, Path, description = "User id"),
         CalendarQuery
@@ -428,7 +453,16 @@ pub async fn get_user_calendar(
     if me != user_id && !are_users_accepted_friends(&db, me, user_id).await? {
         return Err((StatusCode::FORBIDDEN, "access denied".to_string()));
     }
+    let response = build_calendar_response(&db, user_id, &query).await?;
+    Ok(Json(response))
+}
 
+// MARK: Helper methods
+async fn build_calendar_response(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    query: &CalendarQuery,
+) -> Result<CalendarResponse, (StatusCode, String)> {
     let (from, to) = parse_date_range(&query.from, &query.to)?;
 
     let busy_rows = Busyday::find()
@@ -436,7 +470,7 @@ pub async fn get_user_calendar(
         .filter(BusydayColumn::Date.gte(from))
         .filter(BusydayColumn::Date.lte(to))
         .order_by_asc(BusydayColumn::Date)
-        .all(&db)
+        .all(db)
         .await
         .map_err(internal_error)?;
 
@@ -457,107 +491,12 @@ pub async fn get_user_calendar(
         .map(|row| row.date.to_string())
         .collect::<Vec<_>>();
 
-    let pending_invitations = Invitation::find()
-        .filter(InvitationColumn::Status.eq(InvitationStatus::Pending))
-        .filter(
-            Condition::any()
-                .add(InvitationColumn::FromUserId.eq(user_id))
-                .add(InvitationColumn::ToUserId.eq(user_id)),
-        )
-        .all(&db)
-        .await
-        .map_err(internal_error)?;
-
-    let mut direction_by_invitation = HashMap::new();
-    let invitation_ids: Vec<Uuid> = pending_invitations
-        .into_iter()
-        .map(|invitation| {
-            let direction = if invitation.to_user_id == user_id {
-                "incoming"
-            } else {
-                "outgoing"
-            };
-            direction_by_invitation.insert(invitation.id, direction.to_string());
-            invitation.id
-        })
-        .collect();
-
-    let mut pending_invites = Vec::new();
-    if !invitation_ids.is_empty() {
-        let pending_dates = InvitationDate::find()
-            .filter(InvitationDateColumn::InvitationId.is_in(invitation_ids))
-            .filter(InvitationDateColumn::Date.gte(from))
-            .filter(InvitationDateColumn::Date.lte(to))
-            .all(&db)
-            .await
-            .map_err(internal_error)?;
-
-        pending_invites = pending_dates
-            .into_iter()
-            .filter_map(|row| {
-                direction_by_invitation
-                    .get(&row.invitation_id)
-                    .map(|direction| PendingInviteResponse {
-                        invitation_id: row.invitation_id,
-                        date: row.date.to_string(),
-                        direction: direction.clone(),
-                    })
-            })
-            .collect();
-    }
-
-    Ok(Json(CalendarResponse {
+    Ok(CalendarResponse {
         from: from.to_string(),
         to: to.to_string(),
         busy_days,
-        pending_invites,
         past_events,
-    }))
-}
-
-#[utoipa::path(
-    get,
-    path = "/users/me/busydays",
-    summary = "Мои занятые дни",
-    description = "Возвращает занятые дни текущего пользователя за диапазон дат `from..to`. Используется для отрисовки личной занятости в календаре.",
-    params(CalendarQuery),
-    responses(
-        (status = 200, description = "Current user busy days", body = [BusydayResponse]),
-        (status = 400, description = "Invalid date range"),
-        (status = 401, description = "Unauthorized")
-    ),
-    security(
-        ("bearer_auth" = [])
-    ),
-    tag = "Calendar"
-)]
-pub async fn get_my_busydays(
-    auth: AuthUser,
-    State(db): State<DatabaseConnection>,
-    Query(query): Query<CalendarQuery>,
-) -> Result<Json<Vec<BusydayResponse>>, (StatusCode, String)> {
-    let me = parse_auth_user_id(auth)?;
-    let (from, to) = parse_date_range(&query.from, &query.to)?;
-
-    let rows = Busyday::find()
-        .filter(BusydayColumn::UserId.eq(me))
-        .filter(BusydayColumn::Date.gte(from))
-        .filter(BusydayColumn::Date.lte(to))
-        .order_by_asc(BusydayColumn::Date)
-        .all(&db)
-        .await
-        .map_err(internal_error)?;
-
-    Ok(Json(
-        rows.into_iter()
-            .map(|row| BusydayResponse {
-                id: row.id,
-                user_id: row.user_id,
-                date: row.date.to_string(),
-                event_id: row.event_id,
-            })
-            .collect(),
-    ))
+    })
 }
 
 async fn load_invitation_response(

@@ -27,8 +27,8 @@ use utoipa::OpenApi;
         invitation_routes::accept_invitation,
         invitation_routes::decline_invitation,
         invitation_routes::cancel_invitation,
-        invitation_routes::get_user_calendar,
-        invitation_routes::get_my_busydays
+        invitation_routes::get_my_calendar,
+        invitation_routes::get_user_calendar
     ),
     components(
         schemas(
@@ -45,7 +45,6 @@ use utoipa::OpenApi;
             crate::controllers::models::InvitationDateResponse,
             crate::controllers::models::AcceptInvitationRequest,
             crate::controllers::models::BusydayResponse,
-            crate::controllers::models::PendingInviteResponse,
             crate::controllers::models::CalendarResponse
         )
     ),
