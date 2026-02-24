@@ -49,8 +49,7 @@ UNIQUE(invitation_id, date)
 - title (string)
 - description (string, nullable)
 - location (string, nullable)
-- is_group (bool)
-- status (enum: pending, confirmed, cancelled, completed)
+- status (enum: pending, confirmed, canceled, completed)
 - wish_place_id (uuid, nullable)
 - created_at
 
@@ -66,7 +65,7 @@ UNIQUE(invitation_id, date)
 Замечания:
 - уникально на пару (event_id, user_id)
 - event.status = confirmed только когда все участники accepted
-- при declined любого участника: event.status = cancelled (обсуждаемо)
+- при declined любого участника: event.status = cancelled
 
 ## EventMemory (для выполненых ивентов)
 - id (uuid)

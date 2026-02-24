@@ -5,6 +5,8 @@ mod m0002_create_friendships;
 mod m0003_create_busydays;
 mod m0004_create_invitations;
 mod m0005_create_invitation_dates;
+mod m0006_create_events;
+mod m0007_create_event_participants;
 
 pub fn uuid_pk() -> ColumnDef {
     ColumnDef::new(Alias::new("id"))
@@ -26,6 +28,8 @@ impl MigratorTrait for Migrator {
             Box::new(m0003_create_busydays::Migration),
             Box::new(m0004_create_invitations::Migration),
             Box::new(m0005_create_invitation_dates::Migration),
+            Box::new(m0006_create_events::Migration),
+            Box::new(m0007_create_event_participants::Migration),
         ]
     }
 }
