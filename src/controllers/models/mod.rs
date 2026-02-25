@@ -7,3 +7,5 @@ pub use friendship::*;
 pub use invitation::*;
 
 pub use auth::*;
+pub mod events;
+// pub use events::;

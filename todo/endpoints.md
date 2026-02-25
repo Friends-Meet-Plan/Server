@@ -85,16 +85,23 @@ GET /users/me/busydays?from=...&to=...
 - `POST /events`
   - создать событие и приглашения
   - body: `{ date, title, description?, location?, is_group, participant_ids[], wish_place_id? }`
-    - wish_place_id? обсуждаемо можно просто убрать
+    - wish_place_id? NULLABLE
+    - creator автоматически accept
 - `GET /events/:id`
   - получить событие по id
-- `GET /events?scope=upcoming|past|invited&user_id=...`
+  - и участников
+- `GET /events?scope=upcoming|past|invited`
   - список событий по фильтру
+  - всегда только для себя
 - `PATCH /events/:id`
   - обновить поля события
-  - body: `{ title?, description?, location?, status? }`
+  - body: `{ title?, description?, location? }`
 - `POST /events/:id/cancel`
   - отменить событие
+  - только creator
+- `POST /events/{id}/accept и /decline`
+    - Только участник.
+    - если было 2 человека - то cancel в противном случае просто удаляем человека из приглашенных
 
 ## Event Participants / Invitations
 - `GET /events/:id/participants`
