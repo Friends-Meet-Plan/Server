@@ -30,7 +30,8 @@ use utoipa::OpenApi;
         invitation_routes::cancel_invitation,
         invitation_routes::get_my_calendar,
         invitation_routes::get_user_calendar,
-        event_routes::create_event
+        event_routes::create_event,
+        event_routes::get_event
     ),
     components(
         schemas(

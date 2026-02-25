@@ -1,5 +1,5 @@
 use sea_orm::{ColumnTrait, Condition, QueryOrder};
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Json, Router};
 use chrono::NaiveDate;
@@ -16,6 +16,7 @@ use crate::entities::{Friendship, FriendshipColumn};
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()
         .route("/events", axum::routing::post(create_event))
+        .route("/events/{id}", axum::routing::get(get_event))
 }
 
 #[utoipa::path(
@@ -35,7 +36,7 @@ pub fn router() -> Router<DatabaseConnection> {
     ),
     tag = "Events"
 )]
-pub async fn create_event(
+async fn create_event(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
     Json(body): Json<CreateEventBody>,
@@ -137,6 +138,54 @@ pub async fn create_event(
 
     let response = load_event_response(&db_connection, event.id).await?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/events/{id}",
+    summary = "Получить событие",
+    description = "Возвращает событие по `id` вместе с участниками. Доступно только creator или участникам события.",
+    params(
+        ("id" = Uuid, Path, description = "Event id")
+    ),
+    responses(
+        (status = 200, description = "Event details", body = EventResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Event not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Events"
+)]
+pub async fn get_event(
+    auth: AuthUser,
+    State(db_connection): State<DatabaseConnection>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<EventResponse>, (StatusCode, String)> {
+    let me = parse_auth(auth)?;
+    let event = event::Entity::find_by_id(id)
+        .one(&db_connection)
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "event not found".to_string()))?;
+
+    let is_participant = EventParticipant::find()
+        .filter(EventParticipantColumn::EventId.eq(event.id))
+        .filter(EventParticipantColumn::UserId.eq(me))
+        .one(&db_connection)
+        .await
+        .map_err(internal_error)?
+        .is_some();
+
+    if event.creator_id != me && !is_participant {
+        return Err((StatusCode::FORBIDDEN, "forbidden".to_string()));
+    }
+
+    Ok(Json(
+        load_event_response(&db_connection, event.id).await?
+    ))
 }
 
 // MARK: Helper
