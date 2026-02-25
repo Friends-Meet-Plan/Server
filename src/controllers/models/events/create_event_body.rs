@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, ToSchema)]
 pub struct CreateEventBody {
+    #[schema(example = "2026-03-03")]
     pub date: String,
+    #[schema(example = "Coffee meetup")]
     pub title: String,
     pub description: Option<String>,
     pub location: Option<String>,

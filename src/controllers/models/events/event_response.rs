@@ -1,7 +1,8 @@
 use uuid::Uuid;
+use utoipa::ToSchema;
 use crate::controllers::models::events::ParticipantResponse;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ToSchema)]
 pub struct EventResponse {
     pub id: Uuid,
     pub creator_id: Uuid,

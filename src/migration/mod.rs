@@ -25,12 +25,12 @@ pub struct Migrator;
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         vec![
-            Box::new(m0001_create_users::Migration),
+
+            Box::new(m0006_create_events::Migration),Box::new(m0001_create_users::Migration),
             Box::new(m0002_create_friendships::Migration),
             Box::new(m0003_create_busydays::Migration),
             Box::new(m0004_create_invitations::Migration),
             Box::new(m0005_create_invitation_dates::Migration),
-            Box::new(m0006_create_events::Migration),
             Box::new(m0007_create_event_participants::Migration),
             Box::new(m0008_create_wish_places::Migration),
             Box::new(m0009_add_events_wish_place_fk::Migration),

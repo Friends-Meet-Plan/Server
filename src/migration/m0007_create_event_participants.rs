@@ -93,34 +93,36 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_index(
-                Index::drop()
-                    .name("idx_event_participants_user_id")
-                    .table(EventParticipants::Table)
-                    .to_owned(),
-            )
+            .get_connection()
+            .execute(Statement::from_string(
+                manager.get_database_backend(),
+                "DROP INDEX IF EXISTS idx_event_participants_user_id".to_string(),
+            ))
             .await?;
 
         manager
-            .drop_index(
-                Index::drop()
-                    .name("idx_event_participants_event_id")
-                    .table(EventParticipants::Table)
-                    .to_owned(),
-            )
+            .get_connection()
+            .execute(Statement::from_string(
+                manager.get_database_backend(),
+                "DROP INDEX IF EXISTS idx_event_participants_event_id".to_string(),
+            ))
             .await?;
 
         manager
-            .drop_index(
-                Index::drop()
-                    .name("idx_event_participants_event_user_unique")
-                    .table(EventParticipants::Table)
-                    .to_owned(),
-            )
+            .get_connection()
+            .execute(Statement::from_string(
+                manager.get_database_backend(),
+                "DROP INDEX IF EXISTS idx_event_participants_event_user_unique".to_string(),
+            ))
             .await?;
 
         manager
-            .drop_table(Table::drop().table(EventParticipants::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .if_exists()
+                    .table(EventParticipants::Table)
+                    .to_owned(),
+            )
             .await?;
 
         manager

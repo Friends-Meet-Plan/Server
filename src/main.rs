@@ -1,5 +1,5 @@
 use crate::api_doc::api_doc::ApiDoc;
-use crate::controllers::{auth_controller, friendship_controller, invitations_controller};
+use crate::controllers::{auth_controller, event_controller, friendship_controller, invitations_controller};
 use crate::migration::Migrator;
 use axum::Router;
 use controllers::users_controller;
@@ -32,7 +32,8 @@ async fn main() {
         .merge(auth_controller::router())
         .merge(users_controller::router())
         .merge(friendship_controller::router())
-        .merge(invitations_controller::router());
+        .merge(invitations_controller::router())
+        .merge(event_controller::router());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("Starts on http://{}", addr);

@@ -1,4 +1,4 @@
-use sea_orm::{ColumnTrait, QueryOrder};
+use sea_orm::{ColumnTrait, Condition, QueryOrder};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::{Json, Router};
@@ -10,13 +10,32 @@ use crate::controllers::models::events::{CreateEventBody, EventResponse, Partici
 use crate::entities::event::EventStatus;
 use crate::entities::{event, EventActiveModel, EventParticipant, EventParticipantActiveModel, EventParticipantColumn};
 use crate::entities::event_participant::EventParticipantStatus;
+use crate::entities::friendship::{self, FriendshipStatus};
+use crate::entities::{Friendship, FriendshipColumn};
 
-pub fn route() -> Router<DatabaseConnection> {
+pub fn router() -> Router<DatabaseConnection> {
     Router::new()
         .route("/events", axum::routing::post(create_event))
 }
 
-async fn create_event(
+#[utoipa::path(
+    post,
+    path = "/events",
+    summary = "Создать событие",
+    description = "Создаёт событие, автоматически добавляет creator как accepted участника и добавляет остальных участников из `participant_ids` со статусом `pending`.",
+    request_body = CreateEventBody,
+    responses(
+        (status = 201, description = "Event created", body = EventResponse),
+        (status = 400, description = "Invalid payload"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "Events"
+)]
+pub async fn create_event(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
     Json(body): Json<CreateEventBody>,
@@ -28,6 +47,41 @@ async fn create_event(
     participant_ids.retain(|id| id != &me_id.to_string());
     participant_ids.sort();
     participant_ids.dedup();
+
+    let mut parsed_participant_ids = Vec::with_capacity(participant_ids.len());
+    for participant_id in participant_ids {
+        let p_id = Uuid::parse_str(&participant_id)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "invalid participant id".to_string()))?;
+
+        let is_friend = Friendship::find()
+            .filter(FriendshipColumn::Status.eq(FriendshipStatus::Accepted))
+            .filter(
+                Condition::any()
+                    .add(
+                        Condition::all()
+                            .add(friendship::Column::UserId.eq(me_id))
+                            .add(friendship::Column::FriendId.eq(p_id)),
+                    )
+                    .add(
+                        Condition::all()
+                            .add(friendship::Column::UserId.eq(p_id))
+                            .add(friendship::Column::FriendId.eq(me_id)),
+                    ),
+            )
+            .one(&db_connection)
+            .await
+            .map_err(internal_error)?
+            .is_some();
+
+        if !is_friend {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "can invite only accepted friends".to_string(),
+            ));
+        }
+
+        parsed_participant_ids.push(p_id);
+    }
 
     let transaction = db_connection
         .begin()
@@ -58,12 +112,9 @@ async fn create_event(
     .await
     .map_err(|e| internal_error(format!("DB connection error: {}", e)))?;
 
-    let mut models = Vec::with_capacity(participant_ids.len());
+    let mut models = Vec::with_capacity(parsed_participant_ids.len());
 
-    for participant_id in participant_ids {
-        let p_id = Uuid::parse_str(&participant_id)
-            .map_err(|e| {internal_error(e)})?;
-
+    for p_id in parsed_participant_ids {
         models.push(
             EventParticipantActiveModel {
                 event_id: Set(event.id),

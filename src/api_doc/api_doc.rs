@@ -1,5 +1,6 @@
 use crate::controllers::{
-    auth_controller as auth_routes, friendship_controller as friendship_routes,
+    auth_controller as auth_routes, event_controller as event_routes,
+    friendship_controller as friendship_routes,
     invitations_controller as invitation_routes, users_controller as users_routes,
 };
 use utoipa::OpenApi;
@@ -28,7 +29,8 @@ use utoipa::OpenApi;
         invitation_routes::decline_invitation,
         invitation_routes::cancel_invitation,
         invitation_routes::get_my_calendar,
-        invitation_routes::get_user_calendar
+        invitation_routes::get_user_calendar,
+        event_routes::create_event
     ),
     components(
         schemas(
@@ -45,7 +47,10 @@ use utoipa::OpenApi;
             crate::controllers::models::InvitationDateResponse,
             crate::controllers::models::AcceptInvitationRequest,
             crate::controllers::models::BusydayResponse,
-            crate::controllers::models::CalendarResponse
+            crate::controllers::models::CalendarResponse,
+            crate::controllers::models::events::CreateEventBody,
+            crate::controllers::models::events::EventResponse,
+            crate::controllers::models::events::ParticipantResponse
         )
     ),
     tags(
@@ -53,7 +58,8 @@ use utoipa::OpenApi;
         (name = "Users", description = "User profile endpoints"),
         (name = "Friends", description = "Friendship endpoints"),
         (name = "Invitations", description = "Invitations endpoints"),
-        (name = "Calendar", description = "Calendar endpoints")
+        (name = "Calendar", description = "Calendar endpoints"),
+        (name = "Events", description = "Events endpoints")
     )
 )]
 pub struct ApiDoc;
