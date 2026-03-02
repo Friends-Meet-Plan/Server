@@ -1,5 +1,6 @@
 use uuid::Uuid;
 use utoipa::ToSchema;
+
 use crate::controllers::models::events::ParticipantResponse;
 
 #[derive(serde::Serialize, ToSchema)]

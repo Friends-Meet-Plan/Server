@@ -1,7 +1,7 @@
 use crate::controllers::{
-    auth_controller as auth_routes, event_controller as event_routes,
-    friendship_controller as friendship_routes,
-    invitations_controller as invitation_routes, users_controller as users_routes,
+    auth_controller as auth_routes, calendar_controller as calendar_routes,
+    event_controller as event_routes, friendship_controller as friendship_routes,
+    users_controller as users_routes,
 };
 use utoipa::OpenApi;
 
@@ -21,17 +21,16 @@ use utoipa::OpenApi;
         friendship_routes::accept_friend_request,
         friendship_routes::remove_friend,
         friendship_routes::reject_friend_request,
-        invitation_routes::create_invitation,
-        invitation_routes::get_incoming_invitations,
-        invitation_routes::get_outgoing_invitations,
-        invitation_routes::get_invitation_by_id,
-        invitation_routes::accept_invitation,
-        invitation_routes::decline_invitation,
-        invitation_routes::cancel_invitation,
-        invitation_routes::get_my_calendar,
-        invitation_routes::get_user_calendar,
+        calendar_routes::get_my_calendar,
+        calendar_routes::get_user_calendar,
         event_routes::create_event,
-        event_routes::get_event
+        event_routes::get_event,
+        event_routes::get_events,
+        event_routes::update_event,
+        event_routes::cancel_event,
+        event_routes::get_event_participants,
+        event_routes::accept_event,
+        event_routes::decline_event
     ),
     components(
         schemas(
@@ -42,14 +41,12 @@ use utoipa::OpenApi;
             crate::controllers::models::UserDTO,
             crate::controllers::models::user_response::UserResponse,
             crate::controllers::models::update_user_request_body::UpdateUserRequestBody,
-            crate::controllers::models::CreateInvitationRequest,
-            crate::controllers::models::CreatedInvitationResponse,
-            crate::controllers::models::InvitationResponse,
-            crate::controllers::models::InvitationDateResponse,
-            crate::controllers::models::AcceptInvitationRequest,
-            crate::controllers::models::BusydayResponse,
-            crate::controllers::models::CalendarResponse,
+            crate::controllers::models::calendar::BusydayResponse,
+            crate::controllers::models::calendar::PendingInviteResponse,
+            crate::controllers::models::calendar::CalendarResponse,
             crate::controllers::models::events::CreateEventBody,
+            crate::controllers::models::events::UpdateEventBody,
+            crate::controllers::models::events::EventScope,
             crate::controllers::models::events::EventResponse,
             crate::controllers::models::events::ParticipantResponse
         )
@@ -58,7 +55,6 @@ use utoipa::OpenApi;
         (name = "Auth", description = "Authentication endpoints"),
         (name = "Users", description = "User profile endpoints"),
         (name = "Friends", description = "Friendship endpoints"),
-        (name = "Invitations", description = "Invitations endpoints"),
         (name = "Calendar", description = "Calendar endpoints"),
         (name = "Events", description = "Events endpoints")
     )

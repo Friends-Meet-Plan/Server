@@ -10,6 +10,6 @@ pub struct CreateEventBody {
     pub title: String,
     pub description: Option<String>,
     pub location: Option<String>,
-    pub participant_ids: Vec<String>,
+    pub participant_ids: Vec<Uuid>,
     pub wish_place_id: Option<Uuid>,
 }

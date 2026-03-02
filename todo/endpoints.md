@@ -40,77 +40,57 @@
 - `DELETE /friends/:id`
   - удалить из друзей (разорвать accepted связь)
 
-Invitations
-
-POST /invitations
-Создать приглашение с набором дат.
-Body: { "to_user_id": "uuid", "dates": ["2026-02-24","2026-02-26"] }
-Проверки: users друзья (accepted), даты уникальны, нет прошлого (если так решил), нет self-invite.
-Ответ: invitation + invitation_dates.
-
-GET /invitations/incoming?status=pending
-Входящие приглашения текущего пользователя.
-
-GET /invitations/outgoing?status=pending
-Исходящие приглашения текущего пользователя.
-
-GET /invitations/{id}/ 
-Детали приглашения + предложенные даты.
-
-POST /invitations/{id}/accept
-Принять приглашение и выбрать одну дату.
-Body: { "selected_date": "2026-02-26" }
-Проверки: дата есть в invitation_dates, статус сейчас pending, пользователь = to_user_id.
-Эффект: status=accepted, selected_date заполнен, создается event (если так задумано), пишутся busyday.
-
-POST /invitations/{id}/decline
-Отклонить приглашение.
-Эффект: status=declined.
-POST /invitations/{id}/cancel (опционально)
-Отмена отправителем, пока pending.
-Invitation Dates
-
-GET /users/{user_id}/calendar?from=2026-01-01&to=2026-04-30
+## Calendar
+- GET /users/{user_id}/calendar?from=2026-01-01&to=2026-04-30
 Отдает дни для сетки (busy + можно сразу derived free на клиенте).
 Лучше отдавать:
 busy_days (даты + event_id),
 pending_invites (даты pending invitation),
 past_events (для отдельного цвета в прошлом).
 
-GET /users/me/busydays?from=...&to=...
-Мои занятые дни.
-
-
-## Events
+## Events (новый основной flow)
 - `POST /events`
-  - создать событие и приглашения
-  - body: `{ date, title, description?, location?, is_group, participant_ids[], wish_place_id? }`
-    - wish_place_id? NULLABLE
-    - creator автоматически accept
-- `GET /events/:id`
-  - получить событие по id
-  - и участников
-- `GET /events?scope=upcoming|past|invited`
-  - список событий по фильтру
-  - всегда только для себя
-- `PATCH /events/:id`
-  - обновить поля события
-  - body: `{ title?, description?, location? }`
-- `POST /events/:id/cancel`
-  - отменить событие
-  - только creator
-- `POST /events/{id}/accept и /decline`
-    - Только участник.
-    - если было 2 человека - то cancel в противном случае просто удаляем человека из приглашенных
+Body: { date, title, description?, location?, wish_place_id?, participant_ids[] }
+Логика:
 
-## Event Participants / Invitations
-- `GET /events/:id/participants`
-  - список участников и их статусов
-- `POST /events/:id/accept`
-  - принять приглашение текущим пользователем (участник -> accepted)
-- `POST /events/:id/decline`
-  - отклонить приглашение текущим пользователем (участник -> declined, событие -> cancelled)
-    - событие -> cancelled тоже обсуждаемо просто так проще
+creator = из auth
+создаётся event
+в user_events:
+creator: role=owner, response_status=accepted
+participants: role=participant, response_status=pending
+проверки: только accepted-друзья, без self в participant_ids, без дублей
+
+- `GET /events/{id}`
+Возвращает событие + список участников из user_events
+
+- `GET /events?scope=created|invited|upcoming|past`
+Только для текущего пользователя
+
+- `PATCH /events/{id}`
+Body: { title?, description?, location? }
+Только creator
+
+- `POST /events/{id}/cancel`
+Только creator, event.status -> canceled
+
+синхронизация user_events/busydays
+
+- `GET /events/{id}/participants`
+Список из user_events (user_id, role, response_status)
+
+- `POST /events/{id}/accept`
+Только participant с pending
+-> response_status=accepted
+-> запись в busydays
+-> если все accepted, event.status=confirmed
+
+- `POST /events/{id}/decline`
+Только participant с pending/accepted
+-> response_status=declined
+-> удалить его busyday для этого event_id (если был)
+-> если осталось 2 человека (owner + 1) и второй declined, event.status=canceled; для group можно оставить pending/confirmed по твоему правил
+
+---
 
 ## Event Memories
 - `POST /events/:id/memories`

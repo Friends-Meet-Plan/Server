@@ -26,21 +26,14 @@
 
 unique(user_id, date)
 
-## invitation
-- id (uuid)
-- from_user_id
-- to_user_id
-- status (pending, accepted, declined)
-- selected_date (nullable, какая дата принята)
-- created_at
-ПРОВЕРКА НА friends
+# user_events
+Связь пользователь ↔ событие + его ответ:
 
-## invitation_dates (какие даты предложили)
-- id
-- invitation_id
-- date
-
-UNIQUE(invitation_id, date)
+id uuid pk
+event_id uuid not null fk -> events(id) on delete cascade
+user_id uuid not null fk -> users(id) on delete cascade
+role user_event_role not null (owner, participant)
+response_status user_event_response not null (pending, accepted, declined)
 
 ## Event
 - id (uuid)

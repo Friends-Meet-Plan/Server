@@ -1,96 +1,84 @@
-use sea_orm::{ColumnTrait, Condition, QueryOrder};
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
-use axum::{Json, Router};
-use chrono::NaiveDate;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, TransactionTrait};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
+use chrono::{NaiveDate, Utc};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
+    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
+};
 use uuid::Uuid;
+
 use crate::auth::middleware::AuthUser;
-use crate::controllers::models::events::{CreateEventBody, EventResponse, ParticipantResponse};
+use crate::controllers::models::events::{
+    CreateEventBody, EventResponse, EventScope, EventScopeQuery, ParticipantResponse,
+    UpdateEventBody,
+};
 use crate::entities::event::EventStatus;
-use crate::entities::{event, EventActiveModel, EventParticipant, EventParticipantActiveModel, EventParticipantColumn};
-use crate::entities::event_participant::EventParticipantStatus;
 use crate::entities::friendship::{self, FriendshipStatus};
-use crate::entities::{Friendship, FriendshipColumn};
+use crate::entities::user_event::{UserEventResponse, UserEventRole};
+use crate::entities::{
+    event, Busyday, BusydayActiveModel, BusydayColumn, Event, EventActiveModel, EventColumn,
+    Friendship, UserEvent, UserEventActiveModel, UserEventColumn,
+};
 
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()
-        .route("/events", axum::routing::post(create_event))
-        .route("/events/{id}", axum::routing::get(get_event))
+        .route("/events", post(create_event).get(get_events))
+        .route("/events/{id}", get(get_event).patch(update_event))
+        .route("/events/{id}/cancel", post(cancel_event))
+        .route("/events/{id}/participants", get(get_event_participants))
+        .route("/events/{id}/accept", post(accept_event))
+        .route("/events/{id}/decline", post(decline_event))
 }
 
 #[utoipa::path(
     post,
     path = "/events",
     summary = "Создать событие",
-    description = "Создаёт событие, автоматически добавляет creator как accepted участника и добавляет остальных участников из `participant_ids` со статусом `pending`.",
+    description = "Создает событие на один день. Автор берется из auth и сразу получает статус accepted (role=owner). Участники из participant_ids добавляются как role=participant со статусом pending. Можно приглашать только принятых друзей.",
     request_body = CreateEventBody,
     responses(
-        (status = 201, description = "Event created", body = EventResponse),
-        (status = 400, description = "Invalid payload"),
-        (status = 401, description = "Unauthorized"),
-        (status = 500, description = "Internal server error")
+        (status = 201, description = "Событие создано", body = EventResponse),
+        (status = 400, description = "Некорректные данные"),
+        (status = 401, description = "Не авторизован"),
+        (status = 403, description = "Можно приглашать только друзей")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+    security(("bearer_auth" = [])),
     tag = "Events"
 )]
-async fn create_event(
+pub async fn create_event(
     auth: AuthUser,
-    State(db_connection): State<DatabaseConnection>,
+    State(db): State<DatabaseConnection>,
     Json(body): Json<CreateEventBody>,
 ) -> Result<(StatusCode, Json<EventResponse>), (StatusCode, String)> {
-    let me_id = parse_auth(auth)?;
+    let me = parse_auth(auth)?;
     let date = parse_date(&body.date)?;
-    let mut participant_ids = body.participant_ids.clone();
 
-    participant_ids.retain(|id| id != &me_id.to_string());
+    if body.title.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "title is required".to_string()));
+    }
+
+    let mut participant_ids = body.participant_ids;
+    participant_ids.retain(|id| *id != me);
     participant_ids.sort();
     participant_ids.dedup();
 
-    let mut parsed_participant_ids = Vec::with_capacity(participant_ids.len());
-    for participant_id in participant_ids {
-        let p_id = Uuid::parse_str(&participant_id)
-            .map_err(|_| (StatusCode::BAD_REQUEST, "invalid participant id".to_string()))?;
-
-        let is_friend = Friendship::find()
-            .filter(FriendshipColumn::Status.eq(FriendshipStatus::Accepted))
-            .filter(
-                Condition::any()
-                    .add(
-                        Condition::all()
-                            .add(friendship::Column::UserId.eq(me_id))
-                            .add(friendship::Column::FriendId.eq(p_id)),
-                    )
-                    .add(
-                        Condition::all()
-                            .add(friendship::Column::UserId.eq(p_id))
-                            .add(friendship::Column::FriendId.eq(me_id)),
-                    ),
-            )
-            .one(&db_connection)
-            .await
-            .map_err(internal_error)?
-            .is_some();
-
-        if !is_friend {
+    for participant_id in &participant_ids {
+        if !are_users_accepted_friends(&db, me, *participant_id).await? {
             return Err((
                 StatusCode::FORBIDDEN,
                 "can invite only accepted friends".to_string(),
             ));
         }
-
-        parsed_participant_ids.push(p_id);
     }
 
-    let transaction = db_connection
-        .begin()
-        .await
-        .map_err(|e| internal_error(format!("DB connection error: {}", e)))?;
+    let tx = db.begin().await.map_err(internal_error)?;
 
     let event = EventActiveModel {
-        creator_id: Set(me_id),
+        creator_id: Set(me),
         date: Set(date),
         title: Set(body.title),
         description: Set(body.description),
@@ -99,44 +87,42 @@ async fn create_event(
         wish_place_id: Set(body.wish_place_id),
         ..Default::default()
     }
-    .insert(&transaction)
+    .insert(&tx)
     .await
-    .map_err(|e| internal_error(format!("DB connection error: {}", e)))?;
+    .map_err(internal_error)?;
 
-    EventParticipantActiveModel {
+    UserEventActiveModel {
         event_id: Set(event.id),
-        user_id: Set(me_id),
-        status: Set(EventParticipantStatus::Accepted),
+        user_id: Set(me),
+        role: Set(UserEventRole::Owner),
+        response_status: Set(UserEventResponse::Accepted),
         ..Default::default()
     }
-    .insert(&transaction)
+    .insert(&tx)
     .await
-    .map_err(|e| internal_error(format!("DB connection error: {}", e)))?;
+    .map_err(internal_error)?;
 
-    let mut models = Vec::with_capacity(parsed_participant_ids.len());
-
-    for p_id in parsed_participant_ids {
-        models.push(
-            EventParticipantActiveModel {
+    if !participant_ids.is_empty() {
+        let models = participant_ids
+            .into_iter()
+            .map(|participant_id| UserEventActiveModel {
                 event_id: Set(event.id),
-                user_id: Set(p_id),
-                status: Set(EventParticipantStatus::Pending),
+                user_id: Set(participant_id),
+                role: Set(UserEventRole::Participant),
+                response_status: Set(UserEventResponse::Pending),
                 ..Default::default()
-            }
-        );
+            })
+            .collect::<Vec<_>>();
+
+        UserEvent::insert_many(models)
+            .exec(&tx)
+            .await
+            .map_err(internal_error)?;
     }
 
-    EventParticipant::insert_many(models)
-        .exec(&transaction)
-        .await
-        .map_err(internal_error)?;
+    tx.commit().await.map_err(internal_error)?;
 
-    transaction
-        .commit()
-        .await
-        .map_err(|e| internal_error(e.to_string()))?;
-
-    let response = load_event_response(&db_connection, event.id).await?;
+    let response = load_event_response(&db, event.id).await?;
     Ok((StatusCode::CREATED, Json(response)))
 }
 
@@ -144,63 +130,454 @@ async fn create_event(
     get,
     path = "/events/{id}",
     summary = "Получить событие",
-    description = "Возвращает событие по `id` вместе с участниками. Доступно только creator или участникам события.",
-    params(
-        ("id" = Uuid, Path, description = "Event id")
-    ),
+    description = "Возвращает событие по id вместе с участниками из user_events. Доступ: только участник события.",
+    params(("id" = Uuid, Path, description = "ID события")),
     responses(
-        (status = 200, description = "Event details", body = EventResponse),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden"),
-        (status = 404, description = "Event not found")
+        (status = 200, description = "Данные события", body = EventResponse),
+        (status = 401, description = "Не авторизован"),
+        (status = 403, description = "Нет доступа"),
+        (status = 404, description = "Событие не найдено")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+    security(("bearer_auth" = [])),
     tag = "Events"
 )]
 pub async fn get_event(
     auth: AuthUser,
-    State(db_connection): State<DatabaseConnection>,
+    State(db): State<DatabaseConnection>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EventResponse>, (StatusCode, String)> {
     let me = parse_auth(auth)?;
-    let event = event::Entity::find_by_id(id)
-        .one(&db_connection)
+    ensure_event_access(&db, id, me).await?;
+    Ok(Json(load_event_response(&db, id).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/events",
+    summary = "Список событий",
+    description = "Возвращает события текущего пользователя. scope: created | invited | upcoming | past.",
+    params(EventScopeQuery),
+    responses(
+        (status = 200, description = "Список событий", body = [EventResponse]),
+        (status = 401, description = "Не авторизован")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn get_events(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Query(query): Query<EventScopeQuery>,
+) -> Result<Json<Vec<EventResponse>>, (StatusCode, String)> {
+    let me = parse_auth(auth)?;
+    let scope = query.scope.unwrap_or(EventScope::Upcoming);
+    let today = Utc::now().date_naive();
+
+    let events = match scope {
+        EventScope::Created => {
+            Event::find()
+                .filter(EventColumn::CreatorId.eq(me))
+                .order_by_asc(EventColumn::Date)
+                .all(&db)
+                .await
+                .map_err(internal_error)?
+        }
+        EventScope::Invited => {
+            let event_ids = UserEvent::find()
+                .filter(UserEventColumn::UserId.eq(me))
+                .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
+                .all(&db)
+                .await
+                .map_err(internal_error)?
+                .into_iter()
+                .map(|row| row.event_id)
+                .collect::<Vec<_>>();
+
+            if event_ids.is_empty() {
+                Vec::new()
+            } else {
+                Event::find()
+                    .filter(EventColumn::Id.is_in(event_ids))
+                    .order_by_asc(EventColumn::Date)
+                    .all(&db)
+                    .await
+                    .map_err(internal_error)?
+            }
+        }
+        EventScope::Upcoming => {
+            let event_ids = accepted_event_ids(&db, me).await?;
+            if event_ids.is_empty() {
+                Vec::new()
+            } else {
+                Event::find()
+                    .filter(EventColumn::Id.is_in(event_ids))
+                    .filter(EventColumn::Date.gte(today))
+                    .filter(EventColumn::Status.ne(EventStatus::Canceled))
+                    .order_by_asc(EventColumn::Date)
+                    .all(&db)
+                    .await
+                    .map_err(internal_error)?
+            }
+        }
+        EventScope::Past => {
+            let event_ids = accepted_event_ids(&db, me).await?;
+            if event_ids.is_empty() {
+                Vec::new()
+            } else {
+                Event::find()
+                    .filter(EventColumn::Id.is_in(event_ids))
+                    .filter(EventColumn::Date.lt(today))
+                    .order_by_desc(EventColumn::Date)
+                    .all(&db)
+                    .await
+                    .map_err(internal_error)?
+            }
+        }
+    };
+
+    let mut response = Vec::with_capacity(events.len());
+    for row in events {
+        response.push(load_event_response(&db, row.id).await?);
+    }
+
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/events/{id}",
+    summary = "Обновить событие",
+    description = "Обновляет title/description/location. Только creator.",
+    request_body = UpdateEventBody,
+    params(("id" = Uuid, Path, description = "ID события")),
+    responses(
+        (status = 200, description = "Событие обновлено", body = EventResponse),
+        (status = 400, description = "Некорректные данные"),
+        (status = 401, description = "Не авторизован"),
+        (status = 403, description = "Только creator"),
+        (status = 404, description = "Событие не найдено")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn update_event(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateEventBody>,
+) -> Result<Json<EventResponse>, (StatusCode, String)> {
+    let me = parse_auth(auth)?;
+    let event = Event::find_by_id(id)
+        .filter(EventColumn::CreatorId.eq(me))
+        .one(&db)
         .await
         .map_err(internal_error)?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "event not found".to_string()))?;
+        .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
 
-    let is_participant = EventParticipant::find()
-        .filter(EventParticipantColumn::EventId.eq(event.id))
-        .filter(EventParticipantColumn::UserId.eq(me))
-        .one(&db_connection)
+    if body.title.is_none() && body.description.is_none() && body.location.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "nothing to update".to_string()));
+    }
+
+    let mut active = event.into_active_model();
+    if let Some(title) = body.title {
+        if title.trim().is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "title cannot be empty".to_string()));
+        }
+        active.title = Set(title);
+    }
+    if let Some(description) = body.description {
+        active.description = Set(Some(description));
+    }
+    if let Some(location) = body.location {
+        active.location = Set(Some(location));
+    }
+
+    active.update(&db).await.map_err(internal_error)?;
+
+    Ok(Json(load_event_response(&db, id).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/events/{id}/cancel",
+    summary = "Отменить событие",
+    description = "Только creator. Переводит событие в canceled, помечает участников declined и удаляет связанные busyday по event_id.",
+    params(("id" = Uuid, Path, description = "ID события")),
+    responses(
+        (status = 204, description = "Событие отменено"),
+        (status = 401, description = "Не авторизован"),
+        (status = 404, description = "Событие не найдено"),
+        (status = 409, description = "Событие уже canceled/completed")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn cancel_event(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let me = parse_auth(auth)?;
+    let tx = db.begin().await.map_err(internal_error)?;
+
+    let event = Event::find_by_id(id)
+        .filter(EventColumn::CreatorId.eq(me))
+        .one(&tx)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
+
+    if matches!(event.status, EventStatus::Canceled | EventStatus::Completed) {
+        return Err((
+            StatusCode::CONFLICT,
+            "event already canceled or completed".to_string(),
+        ));
+    }
+
+    let participants = UserEvent::find()
+        .filter(UserEventColumn::EventId.eq(id))
+        .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
+        .all(&tx)
+        .await
+        .map_err(internal_error)?;
+
+    for participant in participants {
+        let mut active = participant.into_active_model();
+        active.response_status = Set(UserEventResponse::Declined);
+        active.update(&tx).await.map_err(internal_error)?;
+    }
+
+    Busyday::delete_many()
+        .filter(BusydayColumn::EventId.eq(id))
+        .exec(&tx)
+        .await
+        .map_err(internal_error)?;
+
+    let mut active_event = event.into_active_model();
+    active_event.status = Set(EventStatus::Canceled);
+    active_event.update(&tx).await.map_err(internal_error)?;
+
+    tx.commit().await.map_err(internal_error)?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    get,
+    path = "/events/{id}/participants",
+    summary = "Участники события",
+    description = "Возвращает список участников из user_events: user_id, role, response_status.",
+    params(("id" = Uuid, Path, description = "ID события")),
+    responses(
+        (status = 200, description = "Список участников", body = [ParticipantResponse]),
+        (status = 401, description = "Не авторизован"),
+        (status = 403, description = "Нет доступа"),
+        (status = 404, description = "Событие не найдено")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn get_event_participants(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<ParticipantResponse>>, (StatusCode, String)> {
+    let me = parse_auth(auth)?;
+    ensure_event_access(&db, id, me).await?;
+
+    let participants = load_participants(&db, id).await?;
+    Ok(Json(participants))
+}
+
+#[utoipa::path(
+    post,
+    path = "/events/{id}/accept",
+    summary = "Принять приглашение в событие",
+    description = "Только participant со статусом pending. Переводит в accepted, ставит busyday. Если все участники accepted, событие становится confirmed.",
+    params(("id" = Uuid, Path, description = "ID события")),
+    responses(
+        (status = 200, description = "Приглашение принято", body = EventResponse),
+        (status = 401, description = "Не авторизован"),
+        (status = 404, description = "Событие или участник не найден"),
+        (status = 409, description = "День уже занят или статус не pending")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn accept_event(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<EventResponse>, (StatusCode, String)> {
+    let me = parse_auth(auth)?;
+    let tx = db.begin().await.map_err(internal_error)?;
+
+    let event = Event::find_by_id(id)
+        .one(&tx)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
+
+    if matches!(event.status, EventStatus::Canceled | EventStatus::Completed) {
+        return Err((
+            StatusCode::CONFLICT,
+            "event already canceled or completed".to_string(),
+        ));
+    }
+
+    let participant = UserEvent::find()
+        .filter(UserEventColumn::EventId.eq(id))
+        .filter(UserEventColumn::UserId.eq(me))
+        .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
+        .filter(UserEventColumn::ResponseStatus.eq(UserEventResponse::Pending))
+        .one(&tx)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "pending participant not found".to_string()))?;
+
+    ensure_day_is_free(&tx, me, event.date).await?;
+
+    let mut active = participant.into_active_model();
+    active.response_status = Set(UserEventResponse::Accepted);
+    active.update(&tx).await.map_err(internal_error)?;
+
+    BusydayActiveModel {
+        user_id: Set(me),
+        date: Set(event.date),
+        event_id: Set(Some(id)),
+        ..Default::default()
+    }
+    .insert(&tx)
+    .await
+    .map_err(map_db_constraint_error)?;
+
+    let non_accepted_exists = UserEvent::find()
+        .filter(UserEventColumn::EventId.eq(id))
+        .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
+        .filter(UserEventColumn::ResponseStatus.ne(UserEventResponse::Accepted))
+        .one(&tx)
         .await
         .map_err(internal_error)?
         .is_some();
 
-    if event.creator_id != me && !is_participant {
+    if !non_accepted_exists {
+        let mut event_active = event.into_active_model();
+        event_active.status = Set(EventStatus::Confirmed);
+        event_active.update(&tx).await.map_err(internal_error)?;
+    }
+
+    tx.commit().await.map_err(internal_error)?;
+
+    Ok(Json(load_event_response(&db, id).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/events/{id}/decline",
+    summary = "Отклонить приглашение в событие",
+    description = "Только participant со статусом pending/accepted. Ставит declined, удаляет busyday участника. Если событие на двоих, событие переводится в canceled.",
+    params(("id" = Uuid, Path, description = "ID события")),
+    responses(
+        (status = 204, description = "Приглашение отклонено"),
+        (status = 401, description = "Не авторизован"),
+        (status = 404, description = "Событие или участник не найден")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn decline_event(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let me = parse_auth(auth)?;
+    let tx = db.begin().await.map_err(internal_error)?;
+
+    let event = Event::find_by_id(id)
+        .one(&tx)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
+
+    let participant = UserEvent::find()
+        .filter(UserEventColumn::EventId.eq(id))
+        .filter(UserEventColumn::UserId.eq(me))
+        .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
+        .filter(
+            Condition::any()
+                .add(UserEventColumn::ResponseStatus.eq(UserEventResponse::Pending))
+                .add(UserEventColumn::ResponseStatus.eq(UserEventResponse::Accepted)),
+        )
+        .one(&tx)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "participant not found".to_string()))?;
+
+    let mut participant_active = participant.into_active_model();
+    participant_active.response_status = Set(UserEventResponse::Declined);
+    participant_active.update(&tx).await.map_err(internal_error)?;
+
+    Busyday::delete_many()
+        .filter(BusydayColumn::EventId.eq(id))
+        .filter(BusydayColumn::UserId.eq(me))
+        .exec(&tx)
+        .await
+        .map_err(internal_error)?;
+
+    let participant_total = UserEvent::find()
+        .filter(UserEventColumn::EventId.eq(id))
+        .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
+        .count(&tx)
+        .await
+        .map_err(internal_error)?;
+
+    let was_confirmed = matches!(event.status, EventStatus::Confirmed);
+    let mut event_active = event.into_active_model();
+    if participant_total <= 1 {
+        event_active.status = Set(EventStatus::Canceled);
+        Busyday::delete_many()
+            .filter(BusydayColumn::EventId.eq(id))
+            .exec(&tx)
+            .await
+            .map_err(internal_error)?;
+    } else if was_confirmed {
+        event_active.status = Set(EventStatus::Pending);
+    }
+    event_active.update(&tx).await.map_err(internal_error)?;
+
+    tx.commit().await.map_err(internal_error)?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn ensure_event_access(
+    db: &DatabaseConnection,
+    event_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), (StatusCode, String)> {
+    let event_exists = Event::find_by_id(event_id)
+        .one(db)
+        .await
+        .map_err(internal_error)?
+        .is_some();
+
+    if !event_exists {
+        return Err((StatusCode::NOT_FOUND, "event not found".to_string()));
+    }
+
+    let has_access = UserEvent::find()
+        .filter(UserEventColumn::EventId.eq(event_id))
+        .filter(UserEventColumn::UserId.eq(user_id))
+        .one(db)
+        .await
+        .map_err(internal_error)?
+        .is_some();
+
+    if !has_access {
         return Err((StatusCode::FORBIDDEN, "forbidden".to_string()));
     }
 
-    Ok(Json(
-        load_event_response(&db_connection, event.id).await?
-    ))
-}
-
-// MARK: Helper
-fn parse_auth(auth: AuthUser) -> Result<Uuid, (StatusCode, String)> {
-    Uuid::parse_str(&auth.user_id)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid user id".to_string()))
-}
-
-fn parse_date(value: &str) -> Result<NaiveDate, (StatusCode, String)> {
-    NaiveDate::parse_from_str(value, "%Y-%m-%d")
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid date".to_string()))
-}
-
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+    Ok(())
 }
 
 async fn load_event_response(
@@ -213,20 +590,7 @@ async fn load_event_response(
         .map_err(internal_error)?
         .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
 
-    let participants = EventParticipant::find()
-        .filter(EventParticipantColumn::EventId.eq(event_id))
-        .order_by_asc(EventParticipantColumn::UserId)
-        .all(db)
-        .await
-        .map_err(internal_error)?;
-
-    let participants = participants
-        .into_iter()
-        .map(|p| ParticipantResponse {
-            user_id: p.user_id,
-            status: p.status.to_string(),
-        })
-        .collect();
+    let participants = load_participants(db, event_id).await?;
 
     Ok(EventResponse {
         id: event.id,
@@ -240,4 +604,107 @@ async fn load_event_response(
         created_at: event.created_at.to_rfc3339(),
         participants,
     })
+}
+
+async fn load_participants(
+    db: &DatabaseConnection,
+    event_id: Uuid,
+) -> Result<Vec<ParticipantResponse>, (StatusCode, String)> {
+    let rows = UserEvent::find()
+        .filter(UserEventColumn::EventId.eq(event_id))
+        .order_by_asc(UserEventColumn::UserId)
+        .all(db)
+        .await
+        .map_err(internal_error)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| ParticipantResponse {
+            user_id: row.user_id,
+            role: row.role.to_string(),
+            response_status: row.response_status.to_string(),
+        })
+        .collect())
+}
+
+async fn accepted_event_ids(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, (StatusCode, String)> {
+    let rows = UserEvent::find()
+        .filter(UserEventColumn::UserId.eq(user_id))
+        .filter(UserEventColumn::ResponseStatus.eq(UserEventResponse::Accepted))
+        .all(db)
+        .await
+        .map_err(internal_error)?;
+
+    Ok(rows.into_iter().map(|row| row.event_id).collect())
+}
+
+async fn ensure_day_is_free<C: ConnectionTrait>(
+    db: &C,
+    user_id: Uuid,
+    date: NaiveDate,
+) -> Result<(), (StatusCode, String)> {
+    let exists = Busyday::find()
+        .filter(BusydayColumn::UserId.eq(user_id))
+        .filter(BusydayColumn::Date.eq(date))
+        .one(db)
+        .await
+        .map_err(internal_error)?
+        .is_some();
+
+    if exists {
+        return Err((StatusCode::CONFLICT, "selected day is already busy".to_string()));
+    }
+
+    Ok(())
+}
+
+async fn are_users_accepted_friends(
+    db: &DatabaseConnection,
+    user_a: Uuid,
+    user_b: Uuid,
+) -> Result<bool, (StatusCode, String)> {
+    let row = Friendship::find()
+        .filter(friendship::Column::Status.eq(FriendshipStatus::Accepted))
+        .filter(
+            Condition::any()
+                .add(
+                    Condition::all()
+                        .add(friendship::Column::UserId.eq(user_a))
+                        .add(friendship::Column::FriendId.eq(user_b)),
+                )
+                .add(
+                    Condition::all()
+                        .add(friendship::Column::UserId.eq(user_b))
+                        .add(friendship::Column::FriendId.eq(user_a)),
+                ),
+        )
+        .one(db)
+        .await
+        .map_err(internal_error)?;
+    Ok(row.is_some())
+}
+
+fn parse_auth(auth: AuthUser) -> Result<Uuid, (StatusCode, String)> {
+    Uuid::parse_str(&auth.user_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid user id".to_string()))
+}
+
+fn parse_date(value: &str) -> Result<NaiveDate, (StatusCode, String)> {
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid date".to_string()))
+}
+
+fn map_db_constraint_error(err: sea_orm::DbErr) -> (StatusCode, String) {
+    let message = err.to_string();
+    if message.contains("unique") || message.contains("duplicate key") {
+        return (StatusCode::CONFLICT, message);
+    }
+    internal_error(err)
+}
+
+fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
