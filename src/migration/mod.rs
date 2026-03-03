@@ -11,6 +11,7 @@ mod m0008_create_wish_places;
 mod m0009_add_events_wish_place_fk;
 mod m0010_refactor_invitations_event_link;
 mod m0011_user_events_drop_invitations;
+mod m0012_drop_event_participants;
 
 pub fn uuid_pk() -> ColumnDef {
     ColumnDef::new(Alias::new("id"))
@@ -38,6 +39,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0009_add_events_wish_place_fk::Migration),
             Box::new(m0010_refactor_invitations_event_link::Migration),
             Box::new(m0011_user_events_drop_invitations::Migration),
+            Box::new(m0012_drop_event_participants::Migration),
         ]
     }
 }

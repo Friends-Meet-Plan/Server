@@ -47,18 +47,9 @@ response_status user_event_response not null (pending, accepted, declined)
 - created_at
 
 Замечания:
-- участники события хранятся в EventParticipant (event_id, user_id)
-
-## EventParticipant
-- id (uuid)
-- event_id (uuid)
-- user_id (uuid)
-- status (enum: pending, accepted, declined)
-
-Замечания:
-- уникально на пару (event_id, user_id)
-- event.status = confirmed только когда все участники accepted
-- при declined любого участника: event.status = cancelled
+- участники события хранятся в user_events (event_id, user_id, role, response_status)
+- event.status = confirmed только когда все participant имеют response_status = accepted
+- при declined в событии 1:1 -> event.status = canceled
 
 ## EventMemory (для выполненых ивентов)
 - id (uuid)

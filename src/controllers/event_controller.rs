@@ -75,6 +75,8 @@ pub async fn create_event(
         }
     }
 
+    ensure_day_is_free(&db, me, date).await?;
+
     let tx = db.begin().await.map_err(internal_error)?;
 
     let event = EventActiveModel {
@@ -101,6 +103,16 @@ pub async fn create_event(
     .insert(&tx)
     .await
     .map_err(internal_error)?;
+
+    BusydayActiveModel {
+        user_id: Set(me),
+        date: Set(date),
+        event_id: Set(Some(event.id)),
+        ..Default::default()
+    }
+    .insert(&tx)
+    .await
+    .map_err(map_db_constraint_error)?;
 
     if !participant_ids.is_empty() {
         let models = participant_ids
@@ -301,7 +313,7 @@ pub async fn update_event(
     post,
     path = "/events/{id}/cancel",
     summary = "Отменить событие",
-    description = "Только creator. Переводит событие в canceled, помечает участников declined и удаляет связанные busyday по event_id.",
+    description = "Только creator. Полностью удаляет событие, связанные user_events и очищает busyday по event_id у всех участников.",
     params(("id" = Uuid, Path, description = "ID события")),
     responses(
         (status = 204, description = "Событие отменено"),
@@ -327,24 +339,11 @@ pub async fn cancel_event(
         .map_err(internal_error)?
         .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
 
-    if matches!(event.status, EventStatus::Canceled | EventStatus::Completed) {
+    if matches!(event.status, EventStatus::Completed) {
         return Err((
             StatusCode::CONFLICT,
-            "event already canceled or completed".to_string(),
+            "completed event cannot be canceled".to_string(),
         ));
-    }
-
-    let participants = UserEvent::find()
-        .filter(UserEventColumn::EventId.eq(id))
-        .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
-        .all(&tx)
-        .await
-        .map_err(internal_error)?;
-
-    for participant in participants {
-        let mut active = participant.into_active_model();
-        active.response_status = Set(UserEventResponse::Declined);
-        active.update(&tx).await.map_err(internal_error)?;
     }
 
     Busyday::delete_many()
@@ -353,9 +352,17 @@ pub async fn cancel_event(
         .await
         .map_err(internal_error)?;
 
-    let mut active_event = event.into_active_model();
-    active_event.status = Set(EventStatus::Canceled);
-    active_event.update(&tx).await.map_err(internal_error)?;
+    UserEvent::delete_many()
+        .filter(UserEventColumn::EventId.eq(id))
+        .exec(&tx)
+        .await
+        .map_err(internal_error)?;
+
+    event
+        .into_active_model()
+        .delete(&tx)
+        .await
+        .map_err(internal_error)?;
 
     tx.commit().await.map_err(internal_error)?;
 

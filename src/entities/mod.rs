@@ -1,6 +1,5 @@
 pub mod busyday;
 pub mod event;
-pub mod event_participant;
 pub mod friendship;
 pub mod user_event;
 pub mod user;
@@ -11,9 +10,6 @@ pub use busyday::Entity as Busyday;
 pub use event::ActiveModel as EventActiveModel;
 pub use event::Column as EventColumn;
 pub use event::Entity as Event;
-pub use event_participant::ActiveModel as EventParticipantActiveModel;
-pub use event_participant::Column as EventParticipantColumn;
-pub use event_participant::Entity as EventParticipant;
 pub use friendship::ActiveModel as FriendshipActiveModel;
 pub use friendship::Column as FriendshipColumn;
 pub use friendship::Entity as Friendship;
