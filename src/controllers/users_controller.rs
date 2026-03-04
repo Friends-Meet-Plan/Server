@@ -2,11 +2,10 @@ use axum::{
     Json, Router,
     extract::{Query, State},
     http::StatusCode,
-    routing::{get, patch},
+    routing::{get},
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
-
 use crate::auth::middleware::AuthUser;
 use crate::controllers::models::update_user_request_body::UpdateUserRequestBody;
 use crate::controllers::models::user_name_search_query::UserNameSearchQuery;

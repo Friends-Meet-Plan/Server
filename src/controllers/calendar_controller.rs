@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use chrono::{NaiveDate, Utc};
@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::controllers::models::calendar::{
-    BusydayResponse, CalendarQuery, CalendarResponse, PendingInviteResponse,
+    BusydayResponse, CalendarQuery, CalendarResponse, IsBusyRequest, PendingInviteResponse,
 };
 use crate::entities::friendship::{self, FriendshipStatus};
 use crate::entities::user_event::{UserEventResponse, UserEventRole};
@@ -20,8 +20,46 @@ use crate::entities::{Busyday, BusydayColumn, Event, EventColumn, Friendship, Us
 
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()
+        .route("/calendar/is_busy", post(is_busy))
         .route("/users/me/calendar", get(get_my_calendar))
         .route("/users/{user_id}/calendar", get(get_user_calendar))
+}
+
+#[utoipa::path(
+    post,
+    path = "/calendar/is_busy",
+    summary = "Проверить занятость дня",
+    description = "Проверяет, занят ли день `date` у пользователя `id`. Доступ: сам пользователь или принятый друг.",
+    request_body = IsBusyRequest,
+    responses(
+        (status = 200, description = "Результат проверки", body = bool),
+        (status = 400, description = "Некорректная дата"),
+        (status = 401, description = "Не авторизован"),
+        (status = 403, description = "Нет доступа")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Calendar"
+)]
+pub async fn is_busy(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Json(payload): Json<IsBusyRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    let me = parse_auth(auth)?;
+    if me != payload.id && !are_users_accepted_friends(&db, me, payload.id).await? {
+        return Err((StatusCode::FORBIDDEN, "access denied".to_string()));
+    }
+
+    let date = parse_one_date(&payload.date)?;
+    let busy = Busyday::find()
+        .filter(BusydayColumn::UserId.eq(payload.id))
+        .filter(BusydayColumn::Date.eq(date))
+        .one(&db)
+        .await
+        .map_err(internal_error)?
+        .is_some();
+
+    Ok(Json(busy))
 }
 
 #[utoipa::path(
