@@ -42,7 +42,7 @@ pub async fn get_friends(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
 ) -> Result<Json<Vec<UserDTO>>, (StatusCode, String)> {
-    let me = parse_auth_user_id(auth)?;
+    let me = auth.user_id;
     let rows = Friendship::find()
         .filter(friendship::Column::Status.eq(FriendshipStatus::Accepted))
         .filter(
@@ -96,7 +96,7 @@ pub async fn get_incoming(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
 ) -> Result<Json<Vec<UserDTO>>, (StatusCode, String)> {
-    let me = parse_auth_user_id(auth)?;
+    let me = auth.user_id;
 
     let rows = Friendship::find()
         .filter(FriendshipColumn::FriendId.eq(me))
@@ -137,7 +137,7 @@ pub async fn get_outgoing(
     auth: AuthUser,
     State(db_connection): State<DatabaseConnection>,
 ) -> Result<Json<Vec<UserDTO>>, (StatusCode, String)> {
-    let me = parse_auth_user_id(auth)?;
+    let me = auth.user_id;
 
     let rows = Friendship::find()
         .filter(FriendshipColumn::UserId.eq(me))
@@ -181,7 +181,7 @@ pub async fn friend_request(
     State(db_connection): State<DatabaseConnection>,
     Json(body): Json<FriendIdBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let me = parse_auth_user_id(auth)?;
+    let me = auth.user_id;
     if body.friend_id == me {
         return Err((StatusCode::BAD_REQUEST, "cannot add yourself".to_string()));
     }
@@ -222,7 +222,7 @@ pub async fn remove_friend(
     State(db_connection): State<DatabaseConnection>,
     Path(friend_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let me = parse_auth_user_id(auth)?;
+    let me = auth.user_id;
     if me == friend_id {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -276,7 +276,7 @@ pub async fn accept_friend_request(
     State(db_connection): State<DatabaseConnection>,
     Path(sender_user_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let me = parse_auth_user_id(auth)?;
+    let me = auth.user_id;
 
     if sender_user_id == me {
         return Err((
@@ -330,7 +330,7 @@ pub async fn reject_friend_request(
     State(db_connection): State<DatabaseConnection>,
     Path(sender_user_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let me = parse_auth_user_id(auth)?;
+    let me = auth.user_id;
     if sender_user_id == me {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -359,11 +359,6 @@ pub async fn reject_friend_request(
 }
 
 // MARK: Helper methods
-fn parse_auth_user_id(auth: AuthUser) -> Result<Uuid, (StatusCode, String)> {
-    Uuid::parse_str(&auth.user_id)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid user ID".to_string()))
-}
-
 fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }

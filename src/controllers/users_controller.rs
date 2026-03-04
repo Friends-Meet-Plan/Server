@@ -36,8 +36,7 @@ pub async fn get_me(
     auth_user: AuthUser,
     State(db_connection): State<DatabaseConnection>,
 ) -> Result<Json<UserResponse>, (StatusCode, String)> {
-    let user_id = Uuid::parse_str(&auth_user.user_id)
-        .map_err(|err| (StatusCode::UNAUTHORIZED, "invalid user id".to_string()))?;
+    let user_id = auth_user.user_id;
 
     let model = User::find_by_id(user_id)
         .one(&db_connection)
@@ -75,8 +74,7 @@ pub async fn update_me(
     State(db): State<DatabaseConnection>,
     Json(payload): Json<UpdateUserRequestBody>,
 ) -> Result<Json<UserResponse>, (StatusCode, String)> {
-    let user_id = Uuid::parse_str(&auth.user_id)
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "invalid user id".to_string()))?;
+    let user_id = auth.user_id;
 
     let model = User::find_by_id(user_id)
         .one(&db)

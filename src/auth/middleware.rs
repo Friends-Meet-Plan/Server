@@ -3,9 +3,10 @@ use axum::{
     extract::FromRequestParts,
     http::{StatusCode, request::Parts},
 };
+use uuid::Uuid;
 
 pub struct AuthUser {
-    pub user_id: String,
+    pub user_id: Uuid,
 }
 
 impl<S> FromRequestParts<S> for AuthUser
@@ -15,26 +16,20 @@ where
     type Rejection = (StatusCode, &'static str);
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // let auth_header = parts
-        //     .headers
-        //     .get("Authorization")
-        //     .and_then(|value| value.to_str().ok());
-        // if let Some(header) = auth_header {
-        //     if header.starts_with("Bearer ") {
-        //         let token = header.trim_start_matches("Bearer ");
-        //         if let Some(payload) = verify_jwt(token) {
-        //             return Ok(AuthUser {
-        //                 user_id: payload.sub,
-        //             });
-        //         }
-        //     }
-        // }
-        //
-        // Err((StatusCode::UNAUTHORIZED, "Missing or invalid Bearer token"))
-        // TODO: включить в release
-        return Ok(AuthUser {
-            user_id: "2757cf6a-5ccb-40f1-b111-138998af3660".to_string(),
-            // user_id: "886481fa-ae23-4087-9b07-dff63dbd1ce5".to_string(),
-        });
+        let auth_header = parts
+            .headers
+            .get("Authorization")
+            .and_then(|value| value.to_str().ok());
+        if let Some(header) = auth_header {
+            if header.starts_with("Bearer ") {
+                let token = header.trim_start_matches("Bearer ");
+                if let Ok(payload) = verify_jwt(token) {
+                    if let Ok(user_id) = Uuid::parse_str(&payload.sub) {
+                        return Ok(AuthUser { user_id });
+                    }
+                }
+            }
+        }
+        Err((StatusCode::UNAUTHORIZED, "Missing or invalid Bearer token"))
     }
 }

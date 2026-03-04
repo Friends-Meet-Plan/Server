@@ -54,7 +54,7 @@ pub async fn create_event(
     State(db): State<DatabaseConnection>,
     Json(body): Json<CreateEventBody>,
 ) -> Result<(StatusCode, Json<EventResponse>), (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     let date = parse_date(&body.date)?;
 
     if body.title.trim().is_empty() {
@@ -158,7 +158,7 @@ pub async fn get_event(
     State(db): State<DatabaseConnection>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EventResponse>, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     ensure_event_access(&db, id, me).await?;
     Ok(Json(load_event_response(&db, id).await?))
 }
@@ -181,7 +181,7 @@ pub async fn get_events(
     State(db): State<DatabaseConnection>,
     Query(query): Query<EventScopeQuery>,
 ) -> Result<Json<Vec<EventResponse>>, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     let scope = query.scope.unwrap_or(EventScope::Upcoming);
     let today = Utc::now().date_naive();
 
@@ -278,7 +278,7 @@ pub async fn update_event(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateEventBody>,
 ) -> Result<Json<EventResponse>, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     let event = Event::find_by_id(id)
         .filter(EventColumn::CreatorId.eq(me))
         .one(&db)
@@ -329,7 +329,7 @@ pub async fn cancel_event(
     State(db): State<DatabaseConnection>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     let tx = db.begin().await.map_err(internal_error)?;
 
     let event = Event::find_by_id(id)
@@ -389,7 +389,7 @@ pub async fn get_event_participants(
     State(db): State<DatabaseConnection>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<ParticipantResponse>>, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     ensure_event_access(&db, id, me).await?;
 
     let participants = load_participants(&db, id).await?;
@@ -416,7 +416,7 @@ pub async fn accept_event(
     State(db): State<DatabaseConnection>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EventResponse>, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     let tx = db.begin().await.map_err(internal_error)?;
 
     let event = Event::find_by_id(id)
@@ -497,7 +497,7 @@ pub async fn decline_event(
     State(db): State<DatabaseConnection>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     let tx = db.begin().await.map_err(internal_error)?;
 
     let event = Event::find_by_id(id)
@@ -692,11 +692,6 @@ async fn are_users_accepted_friends(
         .await
         .map_err(internal_error)?;
     Ok(row.is_some())
-}
-
-fn parse_auth(auth: AuthUser) -> Result<Uuid, (StatusCode, String)> {
-    Uuid::parse_str(&auth.user_id)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid user id".to_string()))
 }
 
 fn parse_date(value: &str) -> Result<NaiveDate, (StatusCode, String)> {

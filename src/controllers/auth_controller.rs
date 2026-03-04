@@ -105,7 +105,8 @@ pub async fn login(
         .verify_password(body.password.as_bytes(), &parsed_hash)
         .map_err(|_| (StatusCode::UNAUTHORIZED, "invalid credentials".to_string()))?;
 
-    let token = create_jwt(model.id.to_string());
+    let token = create_jwt(model.id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(LoginResponse {
         token,
         user: UserResponse {

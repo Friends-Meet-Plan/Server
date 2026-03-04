@@ -45,7 +45,7 @@ pub async fn is_busy(
     State(db): State<DatabaseConnection>,
     Json(payload): Json<IsBusyRequest>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     if me != payload.id && !are_users_accepted_friends(&db, me, payload.id).await? {
         return Err((StatusCode::FORBIDDEN, "access denied".to_string()));
     }
@@ -81,7 +81,7 @@ pub async fn get_my_calendar(
     State(db): State<DatabaseConnection>,
     Query(query): Query<CalendarQuery>,
 ) -> Result<Json<CalendarResponse>, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     Ok(Json(build_calendar_response(&db, me, &query).await?))
 }
 
@@ -109,7 +109,7 @@ pub async fn get_user_calendar(
     Path(user_id): Path<Uuid>,
     Query(query): Query<CalendarQuery>,
 ) -> Result<Json<CalendarResponse>, (StatusCode, String)> {
-    let me = parse_auth(auth)?;
+    let me = auth.user_id;
     if me != user_id && !are_users_accepted_friends(&db, me, user_id).await? {
         return Err((StatusCode::FORBIDDEN, "access denied".to_string()));
     }
@@ -219,11 +219,6 @@ async fn are_users_accepted_friends(
         .await
         .map_err(internal_error)?;
     Ok(row.is_some())
-}
-
-fn parse_auth(auth: AuthUser) -> Result<Uuid, (StatusCode, String)> {
-    Uuid::parse_str(&auth.user_id)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid user id".to_string()))
 }
 
 fn parse_date_range(from: &str, to: &str) -> Result<(NaiveDate, NaiveDate), (StatusCode, String)> {
