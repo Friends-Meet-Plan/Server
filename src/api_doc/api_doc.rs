@@ -1,7 +1,7 @@
 use crate::controllers::{
     auth_controller as auth_routes, calendar_controller as calendar_routes,
     event_controller as event_routes, friendship_controller as friendship_routes,
-    users_controller as users_routes,
+    users_controller as users_routes, wish_place_controller as wish_place_routes,
 };
 use utoipa::OpenApi;
 
@@ -32,7 +32,12 @@ use utoipa::OpenApi;
         event_routes::cancel_event,
         event_routes::get_event_participants,
         event_routes::accept_event,
-        event_routes::decline_event
+        event_routes::decline_event,
+        wish_place_routes::get_wish_places,
+        wish_place_routes::create_wish_place,
+        wish_place_routes::update_wish_place,
+        wish_place_routes::visit_wish_place,
+        wish_place_routes::delete_wish_place
     ),
     components(
         schemas(
@@ -53,7 +58,12 @@ use utoipa::OpenApi;
             crate::controllers::models::events::UpdateEventBody,
             crate::controllers::models::events::EventScope,
             crate::controllers::models::events::EventResponse,
-            crate::controllers::models::events::ParticipantResponse
+            crate::controllers::models::events::ParticipantResponse,
+            crate::controllers::models::wish_place::CreateWishPlaceBody,
+            crate::controllers::models::wish_place::UpdateWishPlaceBody,
+            crate::controllers::models::wish_place::VisitWishPlaceBody,
+            crate::controllers::models::wish_place::WishPlaceStatusDto,
+            crate::controllers::models::wish_place::WishPlaceResponse
         )
     ),
     tags(
@@ -61,7 +71,8 @@ use utoipa::OpenApi;
         (name = "Users", description = "User profile endpoints"),
         (name = "Friends", description = "Friendship endpoints"),
         (name = "Calendar", description = "Calendar endpoints"),
-        (name = "Events", description = "Events endpoints")
+        (name = "Events", description = "Events endpoints"),
+        (name = "WishPlaces", description = "Wish places endpoints")
     )
 )]
 pub struct ApiDoc;

@@ -4,7 +4,7 @@ use jsonwebtoken::{
 };
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::fmt::{write, Display};
+use std::fmt::Display;
 use uuid::Uuid;
 
 const JWT_ISSUER: &str = "friends-server";

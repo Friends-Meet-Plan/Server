@@ -6,8 +6,8 @@
   - получить фото/воспоминания события
 
 ## Wish List
-- `GET /wish-places?user_id=...&status=active|visited|archived`
-  - получить места пользователя по статусу
+- `GET /wish-places?user_id=...`
+  - получить места пользователя
 - `POST /wish-places`
   - создать место в wish list
   - body: `{ title, description?, location?, link? }`

@@ -1,4 +1,5 @@
 use sea_orm::entity::prelude::*;
+use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "wish_place_status")]
@@ -9,6 +10,17 @@ pub enum WishPlaceStatus {
     Visited,
     #[sea_orm(string_value = "archived")]
     Archived,
+}
+
+impl fmt::Display for WishPlaceStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            WishPlaceStatus::Active => "active",
+            WishPlaceStatus::Visited => "visited",
+            WishPlaceStatus::Archived => "archived",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
