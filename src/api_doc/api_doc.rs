@@ -10,6 +10,7 @@ use utoipa::OpenApi;
     paths(
         auth_routes::register,
         auth_routes::login,
+        auth_routes::refresh,
         users_routes::get_me,
         users_routes::update_me,
         users_routes::get_user_by_id,
@@ -38,6 +39,8 @@ use utoipa::OpenApi;
             crate::controllers::models::AuthRequestBody,
             crate::controllers::models::LoginRequestBody,
             crate::controllers::models::LoginResponse,
+            crate::controllers::models::RefreshTokenRequest,
+            crate::controllers::models::RefreshTokenResponse,
             crate::controllers::models::FriendIdBody,
             crate::controllers::models::UserDTO,
             crate::controllers::models::user_response::UserResponse,

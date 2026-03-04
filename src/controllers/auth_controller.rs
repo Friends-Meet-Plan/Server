@@ -3,20 +3,24 @@ use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use uuid::Uuid;
 
 use argon2::Argon2;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 
-use crate::auth::jwt::create_jwt;
+use crate::auth::jwt::{create_access_jwt, create_refresh_jwt, verify_refresh_jwt};
 use crate::controllers::models::user_response::UserResponse;
-use crate::controllers::models::{AuthRequestBody, LoginRequestBody, LoginResponse};
+use crate::controllers::models::{
+    AuthRequestBody, LoginRequestBody, LoginResponse, RefreshTokenRequest, RefreshTokenResponse,
+};
 use crate::entities::{User, UserActiveModel, user};
 
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
+        .route("/auth/refresh", post(refresh))
 }
 
 #[utoipa::path(
@@ -105,15 +109,47 @@ pub async fn login(
         .verify_password(body.password.as_bytes(), &parsed_hash)
         .map_err(|_| (StatusCode::UNAUTHORIZED, "invalid credentials".to_string()))?;
 
-    let token = create_jwt(model.id)
+    let access_token = create_access_jwt(model.id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let refresh_token = create_refresh_jwt(model.id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(LoginResponse {
-        token,
+        access_token,
+        refresh_token,
         user: UserResponse {
             id: model.id,
             username: model.username,
             avatar_url: model.avatar_url,
             bio: model.bio,
         },
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/refresh",
+    request_body = RefreshTokenRequest,
+    responses(
+        (status = 200, description = "New token pair", body = RefreshTokenResponse),
+        (status = 401, description = "Invalid refresh token")
+    )
+)]
+pub async fn refresh(
+    Json(body): Json<RefreshTokenRequest>,
+) -> Result<Json<RefreshTokenResponse>, (StatusCode, String)> {
+    let payload = verify_refresh_jwt(&body.refresh_token)
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "invalid refresh token".to_string()))?;
+
+    let user_id = Uuid::parse_str(&payload.sub)
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "invalid refresh token".to_string()))?;
+
+    let access_token = create_access_jwt(user_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let refresh_token = create_refresh_jwt(user_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(RefreshTokenResponse {
+        access_token,
+        refresh_token,
     }))
 }

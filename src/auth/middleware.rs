@@ -1,4 +1,4 @@
-use crate::auth::jwt::verify_jwt;
+use crate::auth::jwt::verify_access_jwt;
 use axum::{
     extract::FromRequestParts,
     http::{StatusCode, request::Parts},
@@ -23,7 +23,7 @@ where
         if let Some(header) = auth_header {
             if header.starts_with("Bearer ") {
                 let token = header.trim_start_matches("Bearer ");
-                if let Ok(payload) = verify_jwt(token) {
+                if let Ok(payload) = verify_access_jwt(token) {
                     if let Ok(user_id) = Uuid::parse_str(&payload.sub) {
                         return Ok(AuthUser { user_id });
                     }
