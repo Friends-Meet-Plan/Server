@@ -3,4 +3,4 @@ db:
 	@./scripts/setup.sh
 
 server:
-	@./scripts/setup.sh & cargo run
+	@cargo run
