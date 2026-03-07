@@ -13,8 +13,8 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::controllers::models::events::{
-    CreateEventBody, EventResponse, EventScope, EventScopeQuery, ParticipantResponse,
-    UpdateEventBody,
+    CreateEventBody, EventResponse, EventScope, EventScopeQuery, FinishEventBody,
+    ParticipantResponse,
 };
 use crate::entities::event::EventStatus;
 use crate::entities::friendship::{self, FriendshipStatus};
@@ -27,7 +27,8 @@ use crate::entities::{
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()
         .route("/events", post(create_event).get(get_events))
-        .route("/events/{id}", get(get_event).patch(update_event))
+        .route("/events/{id}", get(get_event))
+        .route("/events/{id}/finish", post(finish_event))
         .route("/events/{id}/cancel", post(cancel_event))
         .route("/events/{id}/participants", get(get_event_participants))
         .route("/events/{id}/accept", post(accept_event))
@@ -87,6 +88,7 @@ pub async fn create_event(
         location: Set(body.location),
         status: Set(EventStatus::Pending),
         wish_place_id: Set(body.wish_place_id),
+        memory_image: Set(None),
         ..Default::default()
     }
     .insert(&tx)
@@ -256,29 +258,31 @@ pub async fn get_events(
 }
 
 #[utoipa::path(
-    patch,
-    path = "/events/{id}",
-    summary = "Обновить событие",
-    description = "Обновляет title/description/location. Только creator.",
-    request_body = UpdateEventBody,
+    post,
+    path = "/events/{id}/finish",
+    summary = "Завершить событие",
+    description = "Ставит `status=completed` и сохраняет `memory_image`. Только creator. Разрешено только в дату события или позже.",
+    request_body = FinishEventBody,
     params(("id" = Uuid, Path, description = "ID события")),
     responses(
-        (status = 200, description = "Событие обновлено", body = EventResponse),
-        (status = 400, description = "Некорректные данные"),
+        (status = 200, description = "Событие завершено", body = EventResponse),
+        (status = 400, description = "Пустой memory_image"),
         (status = 401, description = "Не авторизован"),
-        (status = 403, description = "Только creator"),
-        (status = 404, description = "Событие не найдено")
+        (status = 404, description = "Событие не найдено или не принадлежит creator"),
+        (status = 409, description = "Событие нельзя завершить до даты события или оно уже canceled/completed")
     ),
     security(("bearer_auth" = [])),
     tag = "Events"
 )]
-pub async fn update_event(
+pub async fn finish_event(
     auth: AuthUser,
     State(db): State<DatabaseConnection>,
     Path(id): Path<Uuid>,
-    Json(body): Json<UpdateEventBody>,
+    Json(body): Json<FinishEventBody>,
 ) -> Result<Json<EventResponse>, (StatusCode, String)> {
     let me = auth.user_id;
+    let today = Utc::now().date_naive();
+
     let event = Event::find_by_id(id)
         .filter(EventColumn::CreatorId.eq(me))
         .one(&db)
@@ -286,24 +290,27 @@ pub async fn update_event(
         .map_err(internal_error)?
         .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
 
-    if body.title.is_none() && body.description.is_none() && body.location.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "nothing to update".to_string()));
+    if matches!(event.status, EventStatus::Canceled | EventStatus::Completed) {
+        return Err((
+            StatusCode::CONFLICT,
+            "event already canceled/completed".to_string(),
+        ));
+    }
+
+    if today < event.date {
+        return Err((
+            StatusCode::CONFLICT,
+            "event can be completed only on/after event date".to_string(),
+        ));
+    }
+
+    if body.memory_image.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "memory_image cannot be empty".to_string()));
     }
 
     let mut active = event.into_active_model();
-    if let Some(title) = body.title {
-        if title.trim().is_empty() {
-            return Err((StatusCode::BAD_REQUEST, "title cannot be empty".to_string()));
-        }
-        active.title = Set(title);
-    }
-    if let Some(description) = body.description {
-        active.description = Set(Some(description));
-    }
-    if let Some(location) = body.location {
-        active.location = Set(Some(location));
-    }
-
+    active.memory_image = Set(Some(body.memory_image));
+    active.status = Set(EventStatus::Completed);
     active.update(&db).await.map_err(internal_error)?;
 
     Ok(Json(load_event_response(&db, id).await?))
@@ -425,10 +432,13 @@ pub async fn accept_event(
         .map_err(internal_error)?
         .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
 
-    if matches!(event.status, EventStatus::Canceled | EventStatus::Completed) {
+    if matches!(
+        event.status,
+        EventStatus::Canceled | EventStatus::Completed
+    ) {
         return Err((
             StatusCode::CONFLICT,
-            "event already canceled or completed".to_string(),
+            "event already canceled/completed".to_string(),
         ));
     }
 
@@ -505,6 +515,16 @@ pub async fn decline_event(
         .await
         .map_err(internal_error)?
         .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
+
+    if matches!(
+        event.status,
+        EventStatus::Canceled | EventStatus::Completed
+    ) {
+        return Err((
+            StatusCode::CONFLICT,
+            "event already canceled/completed".to_string(),
+        ));
+    }
 
     let participant = UserEvent::find()
         .filter(UserEventColumn::EventId.eq(id))
@@ -608,6 +628,7 @@ async fn load_event_response(
         location: event.location,
         status: event.status.to_string(),
         wish_place_id: event.wish_place_id,
+        memory_image: event.memory_image,
         created_at: event.created_at.to_rfc3339(),
         participants,
     })

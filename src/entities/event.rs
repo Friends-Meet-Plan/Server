@@ -38,6 +38,7 @@ pub struct Model {
     pub location: Option<String>,
     pub status: EventStatus,
     pub wish_place_id: Option<Uuid>,
+    pub memory_image: Option<String>,
     pub created_at: DateTimeWithTimeZone,
 }
 

@@ -1,15 +1,3 @@
-## EventMemory (для выполненых ивентов)
-- id (uuid)
-- event_id (uuid)
-- user_id (uuid) // тут все участники чтоб у каждого в проиле отоьразить
-- photo_url (string)
-- date
-
-Замечания:
-- 1 фото на пользователя на событие
-- доступно после event.status = completed
-- заполняет только пользователь
-
 ## WishPlace
 - id (uuid)
 - user_id (uuid)
