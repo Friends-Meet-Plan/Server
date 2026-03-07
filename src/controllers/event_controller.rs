@@ -88,7 +88,7 @@ pub async fn create_event(
         location: Set(body.location),
         status: Set(EventStatus::Pending),
         wish_place_id: Set(body.wish_place_id),
-        memory_image: Set(None),
+        memory_image_base64: Set(None),
         ..Default::default()
     }
     .insert(&tx)
@@ -261,12 +261,12 @@ pub async fn get_events(
     post,
     path = "/events/{id}/finish",
     summary = "Завершить событие",
-    description = "Ставит `status=completed` и сохраняет `memory_image`. Только creator. Разрешено только в дату события или позже.",
+    description = "Ставит `status=completed` и сохраняет `memory_image_base64`. Только creator. Разрешено только в дату события или позже.",
     request_body = FinishEventBody,
     params(("id" = Uuid, Path, description = "ID события")),
     responses(
         (status = 200, description = "Событие завершено", body = EventResponse),
-        (status = 400, description = "Пустой memory_image"),
+        (status = 400, description = "Пустой memory_image_base64"),
         (status = 401, description = "Не авторизован"),
         (status = 404, description = "Событие не найдено или не принадлежит creator"),
         (status = 409, description = "Событие нельзя завершить до даты события или оно уже canceled/completed")
@@ -304,12 +304,12 @@ pub async fn finish_event(
         ));
     }
 
-    if body.memory_image.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "memory_image cannot be empty".to_string()));
+    if body.memory_image_base64.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "memory_image_base64 cannot be empty".to_string()));
     }
 
     let mut active = event.into_active_model();
-    active.memory_image = Set(Some(body.memory_image));
+    active.memory_image_base64 = Set(Some(body.memory_image_base64));
     active.status = Set(EventStatus::Completed);
     active.update(&db).await.map_err(internal_error)?;
 
@@ -628,7 +628,7 @@ async fn load_event_response(
         location: event.location,
         status: event.status.to_string(),
         wish_place_id: event.wish_place_id,
-        memory_image: event.memory_image,
+        memory_image_base64: event.memory_image_base64,
         created_at: event.created_at.to_rfc3339(),
         participants,
     })

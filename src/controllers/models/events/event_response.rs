@@ -13,7 +13,7 @@ pub struct EventResponse {
     pub location: Option<String>,
     pub status: String,
     pub wish_place_id: Option<Uuid>,
-    pub memory_image: Option<String>,
+    pub memory_image_base64: Option<String>,
     pub created_at: String,
     pub participants: Vec<ParticipantResponse>,
 }

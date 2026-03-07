@@ -3,5 +3,5 @@ use utoipa::ToSchema;
 
 #[derive(Deserialize, Serialize, Debug, ToSchema)]
 pub struct FinishEventBody {
-    pub memory_image: String,
+    pub memory_image_base64: String,
 }
