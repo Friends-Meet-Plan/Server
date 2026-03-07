@@ -14,6 +14,7 @@ mod m0011_user_events_drop_invitations;
 mod m0012_drop_event_participants;
 mod m0013_event_finished_memory_image;
 mod m0014_event_memory_image_base64;
+mod m0015_create_refresh_tokens;
 
 pub fn uuid_pk() -> ColumnDef {
     ColumnDef::new(Alias::new("id"))
@@ -44,6 +45,7 @@ impl MigratorTrait for Migrator {
             Box::new(m0012_drop_event_participants::Migration),
             Box::new(m0013_event_finished_memory_image::Migration),
             Box::new(m0014_event_memory_image_base64::Migration),
+            Box::new(m0015_create_refresh_tokens::Migration),
         ]
     }
 }

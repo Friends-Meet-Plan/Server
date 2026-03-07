@@ -11,6 +11,7 @@ use utoipa::OpenApi;
         auth_routes::register,
         auth_routes::login,
         auth_routes::refresh,
+        auth_routes::logout,
         users_routes::get_me,
         users_routes::update_me,
         users_routes::get_user_by_id,

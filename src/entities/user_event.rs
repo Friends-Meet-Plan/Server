@@ -22,7 +22,11 @@ impl fmt::Display for UserEventRole {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
-#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "user_event_response")]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "user_event_response"
+)]
 pub enum UserEventResponse {
     #[sea_orm(string_value = "pending")]
     Pending,

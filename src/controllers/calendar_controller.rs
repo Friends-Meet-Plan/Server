@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
 };
 use chrono::{NaiveDate, Utc};
 use sea_orm::{ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
@@ -16,7 +16,9 @@ use crate::controllers::models::calendar::{
 };
 use crate::entities::friendship::{self, FriendshipStatus};
 use crate::entities::user_event::{UserEventResponse, UserEventRole};
-use crate::entities::{Busyday, BusydayColumn, Event, EventColumn, Friendship, UserEvent, UserEventColumn};
+use crate::entities::{
+    Busyday, BusydayColumn, Event, EventColumn, Friendship, UserEvent, UserEventColumn,
+};
 
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()
@@ -226,7 +228,10 @@ fn parse_date_range(from: &str, to: &str) -> Result<(NaiveDate, NaiveDate), (Sta
     let to_date = parse_one_date(to)?;
 
     if from_date > to_date {
-        return Err((StatusCode::BAD_REQUEST, "`from` must be <= `to`".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "`from` must be <= `to`".to_string(),
+        ));
     }
 
     Ok((from_date, to_date))

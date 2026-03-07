@@ -1,16 +1,16 @@
-use axum::{
-    Json, Router,
-    extract::{Query, State},
-    http::StatusCode,
-    routing::{get},
-};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
-use uuid::Uuid;
 use crate::auth::middleware::AuthUser;
 use crate::controllers::models::update_user_request_body::UpdateUserRequestBody;
 use crate::controllers::models::user_name_search_query::UserNameSearchQuery;
 use crate::controllers::models::user_response::UserResponse;
 use crate::entities::{User, UserActiveModel, UserColumn};
+use axum::{
+    Json, Router,
+    extract::{Query, State},
+    http::StatusCode,
+    routing::get,
+};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use uuid::Uuid;
 
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()

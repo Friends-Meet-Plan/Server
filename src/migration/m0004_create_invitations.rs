@@ -111,8 +111,7 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute(Statement::from_string(
                 manager.get_database_backend(),
-                "DROP TRIGGER IF EXISTS trg_invitations_ensure_friends ON invitations"
-                    .to_string(),
+                "DROP TRIGGER IF EXISTS trg_invitations_ensure_friends ON invitations".to_string(),
             ))
             .await?;
 

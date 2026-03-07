@@ -1,5 +1,5 @@
-use std::fmt;
 use sea_orm::entity::prelude::*;
+use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "event_status")]

@@ -1,8 +1,8 @@
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, patch, post},
-    Json, Router,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, IntoActiveModel,
@@ -17,14 +17,15 @@ use crate::controllers::models::wish_place::{
 };
 use crate::entities::friendship::{self, FriendshipStatus};
 use crate::entities::wish_place::{self, WishPlaceStatus};
-use crate::entities::{
-    Event, Friendship, WishPlace, WishPlaceActiveModel, WishPlaceColumn,
-};
+use crate::entities::{Event, Friendship, WishPlace, WishPlaceActiveModel, WishPlaceColumn};
 
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()
         .route("/wish-places", get(get_wish_places).post(create_wish_place))
-        .route("/wish-places/{id}", patch(update_wish_place).delete(delete_wish_place))
+        .route(
+            "/wish-places/{id}",
+            patch(update_wish_place).delete(delete_wish_place),
+        )
         .route("/wish-places/{id}/visit", post(visit_wish_place))
 }
 

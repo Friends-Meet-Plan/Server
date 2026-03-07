@@ -1,5 +1,5 @@
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::controllers::models::events::ParticipantResponse;
 

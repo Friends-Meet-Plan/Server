@@ -15,9 +15,7 @@ impl MigrationTrait for Migration {
 
         manager
             .get_connection()
-            .execute_unprepared(
-                "ALTER TABLE events ALTER COLUMN memory_image_base64 TYPE text;",
-            )
+            .execute_unprepared("ALTER TABLE events ALTER COLUMN memory_image_base64 TYPE text;")
             .await?;
 
         Ok(())
@@ -26,9 +24,7 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .get_connection()
-            .execute_unprepared(
-                "ALTER TABLE events ALTER COLUMN memory_image_base64 TYPE varchar;",
-            )
+            .execute_unprepared("ALTER TABLE events ALTER COLUMN memory_image_base64 TYPE varchar;")
             .await?;
 
         manager

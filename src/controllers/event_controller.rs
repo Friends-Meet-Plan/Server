@@ -1,8 +1,8 @@
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
 };
 use chrono::{NaiveDate, Utc};
 use sea_orm::{
@@ -20,8 +20,8 @@ use crate::entities::event::EventStatus;
 use crate::entities::friendship::{self, FriendshipStatus};
 use crate::entities::user_event::{UserEventResponse, UserEventRole};
 use crate::entities::{
-    event, Busyday, BusydayActiveModel, BusydayColumn, Event, EventActiveModel, EventColumn,
-    Friendship, UserEvent, UserEventActiveModel, UserEventColumn,
+    Busyday, BusydayActiveModel, BusydayColumn, Event, EventActiveModel, EventColumn, Friendship,
+    UserEvent, UserEventActiveModel, UserEventColumn, event,
 };
 
 pub fn router() -> Router<DatabaseConnection> {
@@ -76,9 +76,19 @@ pub async fn create_event(
         }
     }
 
-    ensure_day_is_free(&db, me, date).await?;
-
     let tx = db.begin().await.map_err(internal_error)?;
+    ensure_day_is_free(&tx, me, date).await?;
+    for participant_id in &participant_ids {
+        if let Err((status, message)) = ensure_day_is_free(&tx, *participant_id, date).await {
+            if status == StatusCode::CONFLICT {
+                return Err((
+                    StatusCode::CONFLICT,
+                    format!("participant {participant_id} is busy on selected day"),
+                ));
+            }
+            return Err((status, message));
+        }
+    }
 
     let event = EventActiveModel {
         creator_id: Set(me),
@@ -188,14 +198,12 @@ pub async fn get_events(
     let today = Utc::now().date_naive();
 
     let events = match scope {
-        EventScope::Created => {
-            Event::find()
-                .filter(EventColumn::CreatorId.eq(me))
-                .order_by_asc(EventColumn::Date)
-                .all(&db)
-                .await
-                .map_err(internal_error)?
-        }
+        EventScope::Created => Event::find()
+            .filter(EventColumn::CreatorId.eq(me))
+            .order_by_asc(EventColumn::Date)
+            .all(&db)
+            .await
+            .map_err(internal_error)?,
         EventScope::Invited => {
             let event_ids = UserEvent::find()
                 .filter(UserEventColumn::UserId.eq(me))
@@ -305,7 +313,10 @@ pub async fn finish_event(
     }
 
     if body.memory_image_base64.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "memory_image_base64 cannot be empty".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "memory_image_base64 cannot be empty".to_string(),
+        ));
     }
 
     let mut active = event.into_active_model();
@@ -432,10 +443,7 @@ pub async fn accept_event(
         .map_err(internal_error)?
         .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
 
-    if matches!(
-        event.status,
-        EventStatus::Canceled | EventStatus::Completed
-    ) {
+    if matches!(event.status, EventStatus::Canceled | EventStatus::Completed) {
         return Err((
             StatusCode::CONFLICT,
             "event already canceled/completed".to_string(),
@@ -450,7 +458,10 @@ pub async fn accept_event(
         .one(&tx)
         .await
         .map_err(internal_error)?
-        .ok_or((StatusCode::NOT_FOUND, "pending participant not found".to_string()))?;
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            "pending participant not found".to_string(),
+        ))?;
 
     ensure_day_is_free(&tx, me, event.date).await?;
 
@@ -516,10 +527,7 @@ pub async fn decline_event(
         .map_err(internal_error)?
         .ok_or((StatusCode::NOT_FOUND, "event not found".to_string()))?;
 
-    if matches!(
-        event.status,
-        EventStatus::Canceled | EventStatus::Completed
-    ) {
+    if matches!(event.status, EventStatus::Canceled | EventStatus::Completed) {
         return Err((
             StatusCode::CONFLICT,
             "event already canceled/completed".to_string(),
@@ -542,7 +550,10 @@ pub async fn decline_event(
 
     let mut participant_active = participant.into_active_model();
     participant_active.response_status = Set(UserEventResponse::Declined);
-    participant_active.update(&tx).await.map_err(internal_error)?;
+    participant_active
+        .update(&tx)
+        .await
+        .map_err(internal_error)?;
 
     Busyday::delete_many()
         .filter(BusydayColumn::EventId.eq(id))
@@ -683,7 +694,10 @@ async fn ensure_day_is_free<C: ConnectionTrait>(
         .is_some();
 
     if exists {
-        return Err((StatusCode::CONFLICT, "selected day is already busy".to_string()));
+        return Err((
+            StatusCode::CONFLICT,
+            "selected day is already busy".to_string(),
+        ));
     }
 
     Ok(())

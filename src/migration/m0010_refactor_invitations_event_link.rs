@@ -35,11 +35,7 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Invitations::Table)
-                    .add_column(
-                        ColumnDef::new(Invitations::EventId)
-                            .uuid()
-                            .not_null(),
-                    )
+                    .add_column(ColumnDef::new(Invitations::EventId).uuid().not_null())
                     .to_owned(),
             )
             .await?;
@@ -96,7 +92,8 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute(Statement::from_string(
                 manager.get_database_backend(),
-                "ALTER TABLE invitations DROP CONSTRAINT IF EXISTS invitations_no_self_check".to_string(),
+                "ALTER TABLE invitations DROP CONSTRAINT IF EXISTS invitations_no_self_check"
+                    .to_string(),
             ))
             .await?;
 
