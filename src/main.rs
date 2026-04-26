@@ -4,7 +4,7 @@ use crate::controllers::{
     wish_place_controller,
 };
 use crate::migration::Migrator;
-use axum::Router;
+use axum::{http::StatusCode, routing::get, Router};
 use controllers::users_controller;
 use dotenvy::dotenv;
 use sea_orm_migration::MigratorTrait;
@@ -31,6 +31,7 @@ async fn main() {
         .expect("migration failed");
 
     let app_router = Router::new()
+        .route("/health", get(|| async { StatusCode::OK }))
         .merge(SwaggerUi::new("/docs").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .merge(auth_controller::router())
         .merge(users_controller::router())
