@@ -27,6 +27,8 @@ use crate::entities::{
 pub fn router() -> Router<DatabaseConnection> {
     Router::new()
         .route("/events", post(create_event).get(get_events))
+        .route("/events/active", get(get_active_events))
+        .route("/events/pending", get(get_pending_events))
         .route("/events/check-availability", get(check_friends_availability))
         .route("/events/{id}", get(get_event))
         .route("/events/{id}/finish", post(finish_event))
@@ -261,6 +263,116 @@ pub async fn get_events(
     let mut response = Vec::with_capacity(events.len());
     for row in events {
         response.push(load_event_response(&db, row.id).await?);
+    }
+
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = "/events/active",
+    summary = "Активные события",
+    description = "Возвращает события текущего пользователя, где ВСЕ участники (включая создателя) имеют статус accepted.",
+    responses(
+        (status = 200, description = "Список активных событий", body = [EventResponse]),
+        (status = 401, description = "Не авторизован")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn get_active_events(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+) -> Result<Json<Vec<EventResponse>>, (StatusCode, String)> {
+    let me = auth.user_id;
+
+    let user_event_ids = UserEvent::find()
+        .filter(
+            Condition::any()
+                .add(UserEventColumn::UserId.eq(me))
+        )
+        .all(&db)
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|row| row.event_id)
+        .collect::<Vec<_>>();
+
+    if user_event_ids.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let events = Event::find()
+        .filter(EventColumn::Id.is_in(user_event_ids))
+        .all(&db)
+        .await
+        .map_err(internal_error)?;
+
+    let mut response = Vec::new();
+    for event in events {
+        let participants = load_participants(&db, event.id).await?;
+        let all_accepted = participants
+            .iter()
+            .all(|p| p.response_status == "accepted");
+
+        if all_accepted {
+            response.push(load_event_response(&db, event.id).await?);
+        }
+    }
+
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = "/events/pending",
+    summary = "События с ожиданием",
+    description = "Возвращает события текущего пользователя, где НЕ все участники имеют статус accepted (т.е. хотя бы один ожидает или отклонил).",
+    responses(
+        (status = 200, description = "Список событий с ожиданием", body = [EventResponse]),
+        (status = 401, description = "Не авторизован")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn get_pending_events(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+) -> Result<Json<Vec<EventResponse>>, (StatusCode, String)> {
+    let me = auth.user_id;
+
+    let user_event_ids = UserEvent::find()
+        .filter(
+            Condition::any()
+                .add(UserEventColumn::UserId.eq(me))
+        )
+        .all(&db)
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|row| row.event_id)
+        .collect::<Vec<_>>();
+
+    if user_event_ids.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let events = Event::find()
+        .filter(EventColumn::Id.is_in(user_event_ids))
+        .all(&db)
+        .await
+        .map_err(internal_error)?;
+
+    let mut response = Vec::new();
+    for event in events {
+        let participants = load_participants(&db, event.id).await?;
+        let all_accepted = participants
+            .iter()
+            .all(|p| p.response_status == "accepted");
+
+        if !all_accepted {
+            response.push(load_event_response(&db, event.id).await?);
+        }
     }
 
     Ok(Json(response))
