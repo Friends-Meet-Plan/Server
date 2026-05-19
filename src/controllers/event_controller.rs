@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::auth::middleware::AuthUser;
 use crate::controllers::models::events::{
     CreateEventBody, EventResponse, EventScope, EventScopeQuery, FinishEventBody,
-    ParticipantResponse,
+    ParticipantResponse, UserAvailabilityResponse,
 };
 use crate::entities::event::EventStatus;
 use crate::entities::friendship::{self, FriendshipStatus};
@@ -29,6 +29,7 @@ pub fn router() -> Router<DatabaseConnection> {
         .route("/events", post(create_event).get(get_events))
         .route("/events/active", get(get_active_events))
         .route("/events/pending", get(get_pending_events))
+        .route("/events/check-user-availability", get(check_user_availability))
         .route("/events/check-availability", get(check_friends_availability))
         .route("/events/{id}", get(get_event))
         .route("/events/{id}/finish", post(finish_event))
@@ -285,6 +286,7 @@ pub async fn get_active_events(
     State(db): State<DatabaseConnection>,
 ) -> Result<Json<Vec<EventResponse>>, (StatusCode, String)> {
     let me = auth.user_id;
+    let today = Utc::now().date_naive();
 
     let user_event_ids = UserEvent::find()
         .filter(
@@ -310,6 +312,25 @@ pub async fn get_active_events(
 
     let mut response = Vec::new();
     for event in events {
+        if event.date < today {
+            let participants = load_participants(&db, event.id).await?;
+            let all_accepted = participants
+                .iter()
+                .all(|p| p.response_status == "accepted");
+
+            let new_status = if all_accepted {
+                EventStatus::Completed
+            } else {
+                EventStatus::Canceled
+            };
+
+            let mut active = event.into_active_model();
+            active.status = Set(new_status);
+            active.update(&db).await.map_err(internal_error)?;
+
+            continue;
+        }
+
         let participants = load_participants(&db, event.id).await?;
         let all_accepted = participants
             .iter()
@@ -340,6 +361,7 @@ pub async fn get_pending_events(
     State(db): State<DatabaseConnection>,
 ) -> Result<Json<Vec<EventResponse>>, (StatusCode, String)> {
     let me = auth.user_id;
+    let today = Utc::now().date_naive();
 
     let user_event_ids = UserEvent::find()
         .filter(
@@ -365,6 +387,28 @@ pub async fn get_pending_events(
 
     let mut response = Vec::new();
     for event in events {
+        // Handle past events: check date and transition status if needed
+        if event.date < today {
+            let participants = load_participants(&db, event.id).await?;
+            let all_accepted = participants
+                .iter()
+                .all(|p| p.response_status == "accepted");
+
+            let new_status = if all_accepted {
+                EventStatus::Completed
+            } else {
+                EventStatus::Canceled
+            };
+
+            // Update event status in database
+            let mut active = event.into_active_model();
+            active.status = Set(new_status);
+            active.update(&db).await.map_err(internal_error)?;
+
+            // Skip past events from response
+            continue;
+        }
+
         let participants = load_participants(&db, event.id).await?;
         let all_accepted = participants
             .iter()
@@ -381,6 +425,41 @@ pub async fn get_pending_events(
 #[derive(serde::Deserialize, utoipa::IntoParams)]
 pub struct CheckAvailabilityQuery {
     date: String,
+}
+
+#[utoipa::path(
+    get,
+    path = "/events/check-user-availability",
+    summary = "Проверить доступность текущего пользователя",
+    description = "Проверяет, свободен ли текущий пользователь в указанную дату (не забронирован на busyday).",
+    params(CheckAvailabilityQuery),
+    responses(
+        (status = 200, description = "Статус доступности пользователя", body = UserAvailabilityResponse),
+        (status = 400, description = "Некорректный формат даты"),
+        (status = 401, description = "Не авторизован")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn check_user_availability(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Query(q): Query<CheckAvailabilityQuery>,
+) -> Result<Json<UserAvailabilityResponse>, (StatusCode, String)> {
+    let me = auth.user_id;
+    let date = parse_date(&q.date)?;
+
+    let is_busy = Busyday::find()
+        .filter(BusydayColumn::UserId.eq(me))
+        .filter(BusydayColumn::Date.eq(date))
+        .one(&db)
+        .await
+        .map_err(internal_error)?
+        .is_some();
+
+    Ok(Json(UserAvailabilityResponse {
+        is_available: !is_busy,
+    }))
 }
 
 #[utoipa::path(
