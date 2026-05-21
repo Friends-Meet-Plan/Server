@@ -32,7 +32,10 @@ pub fn router() -> Router<DatabaseConnection> {
     path = "/auth/register",
     request_body = AuthRequestBody,
     responses(
-        (status = 201, description = "User created")
+        (status = 201, description = "User created successfully"),
+        (status = 400, description = "Validation error: missing username or password"),
+        (status = 409, description = "Username already exists: 'You already have an account, please log in'"),
+        (status = 500, description = "Server error: hashing or database error")
     )
 )]
 pub async fn register(
@@ -45,6 +48,21 @@ pub async fn register(
             "username and password required".to_string(),
         ));
     }
+
+    // Check if username already exists before attempting insert
+    let existing_user = User::find()
+        .filter(user::Column::Username.eq(&body.username))
+        .one(&db_connection)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if existing_user.is_some() {
+        return Err((
+            StatusCode::CONFLICT,
+            "You already have an account, please log in".to_string(),
+        ));
+    }
+
     let salt = SaltString::generate(&mut OsRng);
     let password_hash = Argon2::default()
         .hash_password(body.password.as_bytes(), &salt)
@@ -62,12 +80,7 @@ pub async fn register(
         ..Default::default()
     };
     let _ = active.insert(&db_connection).await.map_err(|e| {
-        let msg = e.to_string();
-        if msg.contains("duplicate key") || msg.contains("unique") {
-            (StatusCode::CONFLICT, "username already exists".to_string())
-        } else {
-            (StatusCode::INTERNAL_SERVER_ERROR, msg)
-        }
+        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
     })?;
     Ok(StatusCode::CREATED)
 }
@@ -78,7 +91,9 @@ pub async fn register(
     request_body = LoginRequestBody,
     responses(
         (status = 200, description = "Login successful", body = LoginResponse),
-        (status = 401, description = "Invalid credentials")
+        (status = 400, description = "Validation error: missing username or password"),
+        (status = 401, description = "Unauthorized: 'User not found' or 'Invalid password'"),
+        (status = 500, description = "Server error: database or hash verification error")
     )
 )]
 pub async fn login(
@@ -99,7 +114,7 @@ pub async fn login(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let Some(model) = model else {
-        return Err((StatusCode::UNAUTHORIZED, "invalid credentials".to_string()));
+        return Err((StatusCode::UNAUTHORIZED, "User not found".to_string()));
     };
 
     let parsed_hash = PasswordHash::new(&model.password_hash).map_err(|_| {
@@ -111,7 +126,7 @@ pub async fn login(
 
     Argon2::default()
         .verify_password(body.password.as_bytes(), &parsed_hash)
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "invalid credentials".to_string()))?;
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid password".to_string()))?;
 
     let access_token = create_access_jwt(model.id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -143,8 +158,9 @@ pub async fn login(
     path = "/auth/refresh",
     request_body = RefreshTokenRequest,
     responses(
-        (status = 200, description = "New token pair", body = RefreshTokenResponse),
-        (status = 401, description = "Invalid refresh token")
+        (status = 200, description = "New token pair issued", body = RefreshTokenResponse),
+        (status = 401, description = "Unauthorized: invalid, revoked, or expired refresh token"),
+        (status = 500, description = "Server error: database error")
     )
 )]
 pub async fn refresh(
@@ -238,8 +254,9 @@ pub async fn refresh(
     path = "/auth/logout",
     request_body = RefreshTokenRequest,
     responses(
-        (status = 204, description = "Refresh token revoked"),
-        (status = 401, description = "Invalid refresh token")
+        (status = 204, description = "Refresh token revoked successfully"),
+        (status = 401, description = "Unauthorized: invalid or malformed refresh token"),
+        (status = 500, description = "Server error: database error")
     )
 )]
 pub async fn logout(
