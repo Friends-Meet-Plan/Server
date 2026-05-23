@@ -348,7 +348,7 @@ pub async fn get_active_events(
     get,
     path = "/events/pending",
     summary = "События с ожиданием",
-    description = "Возвращает события текущего пользователя, где НЕ все участники имеют статус accepted (т.е. хотя бы один ожидает или отклонил).",
+    description = "Возвращает события текущего пользователя, где user's response_status == accepted и event status == pending.",
     responses(
         (status = 200, description = "Список событий с ожиданием", body = [EventResponse]),
         (status = 401, description = "Не авторизован")
@@ -361,62 +361,37 @@ pub async fn get_pending_events(
     State(db): State<DatabaseConnection>,
 ) -> Result<Json<Vec<EventResponse>>, (StatusCode, String)> {
     let me = auth.user_id;
-    let today = Utc::now().date_naive();
 
-    let user_event_ids = UserEvent::find()
-        .filter(
-            Condition::any()
-                .add(UserEventColumn::UserId.eq(me))
-        )
-        .all(&db)
-        .await
-        .map_err(internal_error)?
-        .into_iter()
-        .map(|row| row.event_id)
-        .collect::<Vec<_>>();
-
-    if user_event_ids.is_empty() {
-        return Ok(Json(Vec::new()));
-    }
-
-    let events = Event::find()
-        .filter(EventColumn::Id.is_in(user_event_ids))
+    // Find all events where:
+    // 1. Current user is a participant with response_status == ACCEPTED
+    // 2. Event status == PENDING
+    let user_events = UserEvent::find()
+        .filter(UserEventColumn::UserId.eq(me))
+        .filter(UserEventColumn::ResponseStatus.eq(UserEventResponse::Accepted))
         .all(&db)
         .await
         .map_err(internal_error)?;
 
-    let mut response = Vec::new();
+    if user_events.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let event_ids = user_events
+        .into_iter()
+        .map(|row| row.event_id)
+        .collect::<Vec<_>>();
+
+    let events = Event::find()
+        .filter(EventColumn::Id.is_in(event_ids))
+        .filter(EventColumn::Status.eq(EventStatus::Pending))
+        .order_by_asc(EventColumn::Date)
+        .all(&db)
+        .await
+        .map_err(internal_error)?;
+
+    let mut response = Vec::with_capacity(events.len());
     for event in events {
-        // Handle past events: check date and transition status if needed
-        if event.date < today {
-            let participants = load_participants(&db, event.id).await?;
-            let all_accepted = participants
-                .iter()
-                .all(|p| p.response_status == "accepted");
-
-            let new_status = if all_accepted {
-                EventStatus::Completed
-            } else {
-                EventStatus::Canceled
-            };
-
-            // Update event status in database
-            let mut active = event.into_active_model();
-            active.status = Set(new_status);
-            active.update(&db).await.map_err(internal_error)?;
-
-            // Skip past events from response
-            continue;
-        }
-
-        let participants = load_participants(&db, event.id).await?;
-        let all_accepted = participants
-            .iter()
-            .all(|p| p.response_status == "accepted");
-
-        if !all_accepted {
-            response.push(load_event_response(&db, event.id).await?);
-        }
+        response.push(load_event_response(&db, event.id).await?);
     }
 
     Ok(Json(response))
