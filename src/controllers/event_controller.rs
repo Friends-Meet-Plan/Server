@@ -927,6 +927,8 @@ async fn load_participants(
     db: &DatabaseConnection,
     event_id: Uuid,
 ) -> Result<Vec<ParticipantResponse>, (StatusCode, String)> {
+    use crate::entities::User;
+
     let rows = UserEvent::find()
         .filter(UserEventColumn::EventId.eq(event_id))
         .order_by_asc(UserEventColumn::UserId)
@@ -934,14 +936,20 @@ async fn load_participants(
         .await
         .map_err(internal_error)?;
 
-    Ok(rows
-        .into_iter()
-        .map(|row| ParticipantResponse {
-            user_id: row.user_id,
-            role: row.role.to_string(),
-            response_status: row.response_status.to_string(),
-        })
-        .collect())
+    let mut participants = Vec::new();
+    for row in rows {
+        if let Ok(Some(user)) = User::find_by_id(row.user_id).one(db).await {
+            participants.push(ParticipantResponse {
+                user_id: row.user_id,
+                username: user.username,
+                avatar_url: user.avatar_url,
+                bio: user.bio,
+                role: row.role.to_string(),
+                response_status: row.response_status.to_string(),
+            });
+        }
+    }
+    Ok(participants)
 }
 
 async fn accepted_event_ids(
