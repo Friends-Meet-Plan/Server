@@ -29,6 +29,7 @@ pub fn router() -> Router<DatabaseConnection> {
         .route("/events", post(create_event).get(get_events))
         .route("/events/active", get(get_active_events))
         .route("/events/pending", get(get_pending_events))
+        .route("/events/waiting", get(get_waiting_events))
         .route("/events/check-user-availability", get(check_user_availability))
         .route("/events/check-availability", get(check_friends_availability))
         .route("/events/{id}", get(get_event))
@@ -384,6 +385,65 @@ pub async fn get_pending_events(
     let events = Event::find()
         .filter(EventColumn::Id.is_in(event_ids))
         .filter(EventColumn::Status.eq(EventStatus::Pending))
+        .order_by_asc(EventColumn::Date)
+        .all(&db)
+        .await
+        .map_err(internal_error)?;
+
+    let mut response = Vec::with_capacity(events.len());
+    for event in events {
+        response.push(load_event_response(&db, event.id).await?);
+    }
+
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = "/events/waiting",
+    summary = "События с ожиданием ответа",
+    description = "Возвращает события, где текущий пользователь является участником (role=participant) и еще не принял приглашение (response_status != accepted). Включает события со статусом pending, declined и другие до принятия.",
+    responses(
+        (status = 200, description = "Список событий с ожиданием ответа", body = [EventResponse]),
+        (status = 401, description = "Не авторизован")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Events"
+)]
+pub async fn get_waiting_events(
+    auth: AuthUser,
+    State(db): State<DatabaseConnection>,
+) -> Result<Json<Vec<EventResponse>>, (StatusCode, String)> {
+    let me = auth.user_id;
+    let today = Utc::now().date_naive();
+
+    // Find all user_events where:
+    // 1. user_id == me
+    // 2. role == Participant
+    // 3. response_status != Accepted
+    let user_events = UserEvent::find()
+        .filter(UserEventColumn::UserId.eq(me))
+        .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
+        .filter(UserEventColumn::ResponseStatus.ne(UserEventResponse::Accepted))
+        .all(&db)
+        .await
+        .map_err(internal_error)?;
+
+    if user_events.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let event_ids = user_events
+        .into_iter()
+        .map(|row| row.event_id)
+        .collect::<Vec<_>>();
+
+    // Load events and filter out past events
+    let events = Event::find()
+        .filter(EventColumn::Id.is_in(event_ids))
+        .filter(EventColumn::Date.gte(today))
+        .filter(EventColumn::Status.ne(EventStatus::Canceled))
+        .filter(EventColumn::Status.ne(EventStatus::Completed))
         .order_by_asc(EventColumn::Date)
         .all(&db)
         .await
