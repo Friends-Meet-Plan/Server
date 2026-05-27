@@ -213,6 +213,7 @@ pub async fn get_events(
             let event_ids = UserEvent::find()
                 .filter(UserEventColumn::UserId.eq(me))
                 .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
+                .filter(UserEventColumn::ResponseStatus.ne(UserEventResponse::Declined))
                 .all(&db)
                 .await
                 .map_err(internal_error)?
@@ -294,6 +295,7 @@ pub async fn get_active_events(
             Condition::any()
                 .add(UserEventColumn::UserId.eq(me))
         )
+        .filter(UserEventColumn::ResponseStatus.ne(UserEventResponse::Declined))
         .all(&db)
         .await
         .map_err(internal_error)?
@@ -420,11 +422,12 @@ pub async fn get_waiting_events(
     // Find all user_events where:
     // 1. user_id == me
     // 2. role == Participant
-    // 3. response_status != Accepted
+    // 3. response_status != Accepted AND != Declined
     let user_events = UserEvent::find()
         .filter(UserEventColumn::UserId.eq(me))
         .filter(UserEventColumn::Role.eq(UserEventRole::Participant))
         .filter(UserEventColumn::ResponseStatus.ne(UserEventResponse::Accepted))
+        .filter(UserEventColumn::ResponseStatus.ne(UserEventResponse::Declined))
         .all(&db)
         .await
         .map_err(internal_error)?;
