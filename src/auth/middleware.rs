@@ -30,6 +30,6 @@ where
                 }
             }
         }
-        Err((StatusCode::UNAUTHORIZED, "Missing or invalid Bearer token"))
+        Err((StatusCode::UNAUTHORIZED, "Your session has expired. Please log in again"))
     }
 }
